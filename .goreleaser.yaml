@@ -16,6 +16,20 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+brews:
+  - name: acompose
+    repository:
+      owner: htlin222
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://acompose.pages.dev
+    description: Run your docker-compose.yml on Apple's container CLI
+    license: MIT
+    install: bin.install "acompose"
+    test: system "#{bin}/acompose", "version"
+    commit_msg_template: "acompose {{ .Tag }}"
+
 checksum:
   name_template: checksums.txt
 

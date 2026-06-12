@@ -23,4 +23,10 @@ dryrun: build
 
 check: fmt vet test dryrun
 
-.PHONY: build darwin fmt vet test dryrun check
+PREFIX ?= $(shell brew --prefix 2>/dev/null || echo /usr/local)
+
+install: build
+	install -m 0755 $(BIN) $(PREFIX)/bin/$(BIN)
+	@echo "installed $(PREFIX)/bin/$(BIN)"
+
+.PHONY: build darwin fmt vet test dryrun check install

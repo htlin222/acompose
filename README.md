@@ -42,8 +42,10 @@ fills that gap, and leans into the IP-first model instead of fighting it.
 ## Install
 
 ```sh
-make darwin        # builds acompose-darwin-arm64
-# or just: go build -o acompose ./src
+brew install htlin222/tap/acompose
+
+# or from source:
+make install       # builds and installs into your brew prefix (or /usr/local)
 ```
 
 Requires macOS 26 with Apple's `container` CLI installed; Apple Silicon only.
