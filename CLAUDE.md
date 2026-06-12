@@ -47,7 +47,9 @@ Beyond up/down:
 
 **Dry-run is a first-class mode**: `runner{dry: true}` prints each command instead of executing, and `getIP` returns `<name-ip>` placeholders. Any new execution path must go through `runner.run` so dry-run and the CI assertions keep working.
 
-**UI** (src/ui.go): same binary, serves an embedded offline dashboard at `127.0.0.1:4242` with `/api/state`, `/api/logs`, `/api/action`. It polls `container ls --all` once per state collection and uses tolerant text matching rather than depending on the unstable `ls` JSON schema.
+**UI** (src/ui.go): same binary, serves an embedded offline dashboard at `127.0.0.1:4242` with `/api/state`, `/api/logs`, `/api/action`. It polls `container ls --all` once per state collection and uses tolerant text matching rather than depending on the unstable `ls` JSON schema. The control endpoint is CSRF/DNS-rebinding guarded (`guardStateChanging`: JSON content-type + loopback Host); non-loopback binds are warned. `published` ports are escaped in the dashboard JS (compose long-syntax `published:` is a free string → XSS vector).
+
+**TUI** (src/tui.go): `acompose top` (alias `tui`) — a Bubble Tea dashboard. The model's data access is injected (`fetchState`/`fetchLogs`/`doAction` fields, defaulting to `collectState`/`container logs` tail/`ensureServiceRunning`+`container stop`) so `Update` is a pure reducer testable with synthetic `tea.KeyMsg` — no TTY needed. `cmdTop` guards `!isTTY` (degrades to a hint in pipes). This is the project's only third-party dependency tree (charmbracelet/*, pure Go — CGO stays off); go.mod pins `toolchain go1.26.4` so govulncheck passes on patched stdlib.
 
 ## Conventions
 

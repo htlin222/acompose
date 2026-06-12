@@ -50,8 +50,11 @@ fills that gap, and leans into the IP-first model instead of fighting it.
 - **`acompose update`** — pulls newer images, recreates only the services
   whose manifest digest actually moved, rebuilds `build:` services (the
   [dockcheck](https://github.com/mag37/dockcheck) idea, native).
-- **`acompose ui`** — a live dashboard in the same binary: every service as
-  a card with its real IP front and center, status lamp, published ports,
+- **`acompose top`** — a lazydocker-style terminal dashboard: navigate
+  services with the keyboard, watch live status/IPs, tail logs, start/stop —
+  no browser, works great over SSH.
+- **`acompose ui`** — a live web dashboard in the same binary: every service
+  as a card with its real IP front and center, status lamp, published ports,
   logs panel, stop/start. `acompose stats` for live resource usage.
 - **Menu bar presence** — `acompose menubar` emits
   [SwiftBar](https://github.com/swiftbar/SwiftBar)/xbar plugin output
@@ -89,7 +92,8 @@ cd your-project
 acompose check           # compatibility report — how well does this file translate?
 acompose up --dry-run    # see the exact `container` commands first
 acompose up
-acompose ui              # live dashboard on http://127.0.0.1:4242
+acompose top             # interactive terminal dashboard (keyboard-driven)
+acompose ui              # live web dashboard on http://127.0.0.1:4242
 acompose dev             # develop.watch hot reload: sync / rebuild / restart
 acompose watch           # supervise restart: policies (poll, restart, re-wire DNS)
 acompose update          # pull newer images, recreate only what changed

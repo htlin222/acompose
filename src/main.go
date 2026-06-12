@@ -1234,6 +1234,8 @@ func main() {
 			dnsSub = positional[0]
 		}
 		cmdDNS(p, r, dnsSub)
+	case "top", "tui":
+		cmdTop(p)
 	case "ui":
 		addr := "127.0.0.1:4242"
 		explicit := len(positional) > 0
@@ -1296,6 +1298,7 @@ func printUsage(w io.Writer) {
   stats                     live resource usage
   logs   SERVICE [-f]       container logs (-f to follow)
   exec   SERVICE -- CMD     run a command inside a service
+  top                       interactive terminal dashboard (lazydocker-style)
   ui     [ADDR]             live web dashboard (default 127.0.0.1:4242)
   menubar                   SwiftBar/xbar plugin output (contrib/swiftbar)
   check                     compatibility report — will this file translate?
@@ -1398,6 +1401,24 @@ Copies named-volume DATA from Docker/OrbStack into Apple container volumes
 (docker tars the volume, container untars it). Docker must still be installed
 when you run this. With no args, every named volume is migrated; pass keys to
 limit it. Refuses to overwrite a non-empty target volume.`,
+
+	"top": `acompose top — interactive terminal dashboard
+
+  acompose top   (alias: acompose tui)
+
+A lazydocker-style TUI for the running stack, in your terminal. Each service is
+a row with a status dot, its real IP (or state), and published ports; the
+selected row is highlighted. Reuses the same data the web 'ui' does.
+
+  ↑/↓ (or k/j)   move the selection
+  s              toggle the selected service: running → stop, else → start
+  l / enter      focus the logs pane for the selected service (esc/h to go back)
+  r              refresh state now
+  q / ctrl+c     quit
+
+State refreshes every 2s; in the logs pane the last 200 lines refresh every 2s
+and ↑/↓ pgup/pgdn scroll. Needs an interactive terminal — in a pipe or CI it
+exits with a hint to use 'acompose ps' / 'acompose ui' instead.`,
 
 	"ui": `acompose ui — live web dashboard
 
