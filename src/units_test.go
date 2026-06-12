@@ -307,9 +307,9 @@ func TestEnvKeyTable(t *testing.T) {
 		{"db-master", "DB_MASTER_HOST"},
 		{"a.b.c", "A_B_C_HOST"},
 		{"Mixed-Case.x", "MIXED_CASE_X_HOST"},
-		// leading digit is kept as-is — documents current behavior even though
-		// "2COOL_HOST" is not a POSIX-portable variable name
-		{"2cool", "2COOL_HOST"},
+		// a leading digit gets an underscore prefix so the var name stays
+		// POSIX-portable
+		{"2cool", "_2COOL_HOST"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -362,10 +362,10 @@ func TestLsLineRunning(t *testing.T) {
 		{"running container", lsOut, "proj-db", true},
 		{"stopped container", lsOut, "proj-app", false},
 		{"missing container", lsOut, "proj-ghost", false},
-		// SUBSTRING COLLISION (documented, not fixed): matching is plain
-		// strings.Contains per line, so querying "proj-app" matches the
-		// "proj-app2" line and reports its state — a false positive.
-		{"substring collision with a longer name", "proj-app2  nginx  running\n", "proj-app", true},
+		// matching is by exact ID column, so "proj-app" must NOT claim the
+		// "proj-app2" line (this was a substring-collision false positive)
+		{"no collision with a longer name", "proj-app2  nginx  running\n", "proj-app", false},
+		{"exact name still matches", "proj-app2  nginx  stopped\nproj-app  nginx  running\n", "proj-app", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

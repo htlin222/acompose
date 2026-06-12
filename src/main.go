@@ -421,17 +421,28 @@ func cnameOf(p *types.Project, name string) string {
 // lsLineRunning reports whether `container ls --all` output shows cname on a
 // line whose STATE is running — same tolerant text matching as collectState,
 // so we don't depend on the (still-shifting) ls JSON schema.
-func lsLineRunning(lsOut, cname string) bool {
+// lsLineFor returns the `container ls` line whose ID column (first field) is
+// exactly cname — a plain substring match would let "proj-app" claim a
+// "proj-app2" line.
+func lsLineFor(lsOut, cname string) string {
 	for _, line := range strings.Split(lsOut, "\n") {
-		if strings.Contains(line, cname) {
-			return strings.Contains(strings.ToLower(line), "running")
+		if f := strings.Fields(line); len(f) > 0 && f[0] == cname {
+			return line
 		}
 	}
-	return false
+	return ""
+}
+
+func lsLineRunning(lsOut, cname string) bool {
+	return strings.Contains(strings.ToLower(lsLineFor(lsOut, cname)), "running")
 }
 
 func envKey(name string) string {
-	return regexp.MustCompile(`[^A-Z0-9]`).ReplaceAllString(strings.ToUpper(name), "_") + "_HOST"
+	k := regexp.MustCompile(`[^A-Z0-9]`).ReplaceAllString(strings.ToUpper(name), "_")
+	if k != "" && k[0] >= '0' && k[0] <= '9' {
+		k = "_" + k // "2cool" must not become the invalid var name 2COOL_HOST
+	}
+	return k + "_HOST"
 }
 
 // hostsWarned dedupes the per-service /etc/hosts warning — a shell-less
@@ -859,9 +870,15 @@ func cmdPs(p *types.Project, r runner) {
 	if len(lines) == 0 {
 		return
 	}
+	// match by exact container name, not substring — covers container_name
+	// overrides and won't pick up other projects' lines by accident
+	mine := map[string]bool{}
+	for name := range p.Services {
+		mine[cnameOf(p, name)] = true
+	}
 	fmt.Println(lines[0])
 	for _, line := range lines[1:] {
-		if strings.Contains(line, p.Name+"-") {
+		if f := strings.Fields(line); len(f) > 0 && mine[f[0]] {
 			fmt.Println(line)
 		}
 	}

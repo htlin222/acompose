@@ -73,14 +73,11 @@ func collectState(p *types.Project) uiState {
 			}
 		}
 		s.State = "missing"
-		for _, line := range strings.Split(lsOut, "\n") {
-			if strings.Contains(line, cname) {
-				if strings.Contains(strings.ToLower(line), "running") {
-					s.State = "running"
-				} else {
-					s.State = "stopped"
-				}
-				break
+		if line := lsLineFor(lsOut, cname); line != "" {
+			if strings.Contains(strings.ToLower(line), "running") {
+				s.State = "running"
+			} else {
+				s.State = "stopped"
 			}
 		}
 		if s.State == "running" {
