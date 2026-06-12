@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "files need gofmt:"; echo "$out"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: build (linux)
+        run: go build -o acompose ./src
+
+      - name: build (darwin/arm64 — the actual target)
+        run: GOOS=darwin GOARCH=arm64 go build -o /dev/null ./src
+
+      # The CLI's whole job is translating compose files into `container`
+      # commands, and --dry-run prints exactly those commands without needing
+      # macOS. So the integration test asserts on dry-run output.
+      - name: dry-run integration test
+        run: |
+          cd examples
+          ../acompose up --dry-run > /tmp/out.txt 2> /tmp/err.txt || { cat /tmp/err.txt; exit 1; }
+          cat /tmp/out.txt /tmp/err.txt
+
+          assert() { grep -qF -- "$1" "$2" || { echo "MISSING in $2: $1"; exit 1; }; }
+
+          # dependency ordering
+          assert "start order: db → api" /tmp/out.txt
+          # .env default-value interpolation
+          assert "POSTGRES_PASSWORD=devpass" /tmp/out.txt
+          # port publishing incl. bind IP
+          assert "--publish 5432:5432" /tmp/out.txt
+          assert "--publish 127.0.0.1:8080:8080" /tmp/out.txt
+          # build translation
+          assert "container build --tag" /tmp/out.txt
+          # platform-gap warnings are loud, not silent
+          assert "healthcheck ignored" /tmp/err.txt
+
+          # teardown is reverse order
+          ../acompose down --dry-run > /tmp/down.txt 2>&1
+          assert "container stop examples-api" /tmp/down.txt
+          grep -n "stop examples" /tmp/down.txt | head -1 | grep -q api || { echo "down order wrong"; exit 1; }

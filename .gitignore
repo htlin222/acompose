@@ -1,0 +1,5 @@
+acompose
+acompose-*
+*.tar.gz
+dist/
+.DS_Store

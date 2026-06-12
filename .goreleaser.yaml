@@ -1,0 +1,25 @@
+version: 2
+
+project_name: acompose
+
+builds:
+  - main: ./src
+    binary: acompose
+    env: [CGO_ENABLED=0]
+    # Apple Silicon is the real target; darwin/amd64 covered for completeness,
+    # linux builds exist only so CI artifacts are testable.
+    goos: [darwin, linux]
+    goarch: [arm64, amd64]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs", "^chore", "^ci"]

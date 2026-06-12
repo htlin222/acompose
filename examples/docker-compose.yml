@@ -1,0 +1,18 @@
+# Example stack exercising most of what acompose translates:
+# .env interpolation, build, service_healthy, and a published port.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${PGPASS:-devpass}
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+  api:
+    build:
+      context: ./api
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
