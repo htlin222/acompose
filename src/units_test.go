@@ -349,6 +349,52 @@ func TestNamedVolumes(t *testing.T) {
 	}
 }
 
+func TestEnsureServiceRunning(t *testing.T) {
+	p := projectFromYAML(t, `
+services:
+  web:
+    image: nginx
+    depends_on: [db]
+  db:
+    image: postgres
+`)
+	t.Run("stopped container is started", func(t *testing.T) {
+		fakeContainer(t, `case "$1" in start) exit 0;; esac; echo "{}"; exit 0`)
+		ok, detail := ensureServiceRunning(p, runner{}, "web", true)
+		if !ok || detail != "started" {
+			t.Errorf("= (%v, %q), want (true, started)", ok, detail)
+		}
+	})
+	t.Run("missing container is recreated", func(t *testing.T) {
+		fakeContainer(t, `case "$1" in
+start) echo "container not found"; exit 1;;
+run) exit 0;;
+*) echo "{}"; exit 0;;
+esac`)
+		ok, detail := ensureServiceRunning(p, runner{}, "web", true)
+		if !ok || detail != "recreated" {
+			t.Errorf("= (%v, %q), want (true, recreated)", ok, detail)
+		}
+	})
+	t.Run("recreate failure surfaces the runtime message", func(t *testing.T) {
+		fakeContainer(t, `case "$1" in
+start) echo "container not found"; exit 1;;
+run) echo "Address already in use"; exit 1;;
+*) echo "{}"; exit 0;;
+esac`)
+		ok, detail := ensureServiceRunning(p, runner{}, "web", true)
+		if ok || !strings.Contains(detail, "Address already in use") {
+			t.Errorf("= (%v, %q), want failure mentioning the address error", ok, detail)
+		}
+	})
+	t.Run("unknown service refused", func(t *testing.T) {
+		ok, _ := ensureServiceRunning(p, runner{}, "ghost", true)
+		if ok {
+			t.Error("unknown service must not be ok")
+		}
+	})
+}
+
 func TestLsLineRunning(t *testing.T) {
 	lsOut := "ID         IMAGE      STATE\n" +
 		"proj-db    postgres   running\n" +

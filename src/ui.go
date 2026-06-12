@@ -134,10 +134,21 @@ func cmdUI(p *types.Project, addr string) {
 			http.Error(w, "op must be stop|start", 400)
 			return
 		}
-		out, err := exec.Command("container", body.Op, cnameOf(p, body.Service)).CombinedOutput()
+		var ok bool
+		var detail string
+		if body.Op == "start" {
+			// start must work from any state — stopped is started, missing
+			// (deleted / never created) is recreated the way `up` would
+			ok, detail = ensureServiceRunning(p, runner{}, body.Service, true)
+		} else {
+			out, err := exec.Command("container", "stop", cnameOf(p, body.Service)).CombinedOutput()
+			ok, detail = err == nil, strings.TrimSpace(string(out))
+			if ok {
+				detail = "stopped"
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok": err == nil, "output": strings.TrimSpace(string(out))})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "output": detail})
 	})
 
 	url := "http://" + strings.Replace(addr, "0.0.0.0", "localhost", 1)
@@ -176,6 +187,12 @@ header{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;border-bottom:1
 .pulse i{width:8px;height:8px;border-radius:50%;background:var(--run);display:inline-block}
 @media (prefers-reduced-motion:no-preference){.pulse i{animation:beat 2s infinite}}
 @keyframes beat{0%,100%{opacity:1}50%{opacity:.25}}
+
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,12px);max-width:80vw;
+  background:var(--panel);border:1px solid var(--run);border-radius:8px;padding:10px 16px;
+  font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:99}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.err{border-color:var(--miss);color:var(--miss)}
 
 .chain{padding:18px 0 6px;font-size:13px;color:var(--dim);letter-spacing:.04em;overflow-x:auto;white-space:nowrap}
 .chain b{color:var(--text);font-weight:600}
@@ -222,6 +239,7 @@ footer{padding-top:22px;font-size:11px;color:var(--dim)}
 </header>
 <div class="chain" id="chain"></div>
 <main id="grid"><div class="empty">connecting to the stack…</div></main>
+<div id="toast" role="status" aria-live="polite"></div>
 <footer>each card is its own virtual machine with its own address — click an IP to copy it</footer>
 
 <div id="logwrap" role="dialog" aria-modal="true">
@@ -274,8 +292,20 @@ function render(st){
 }
 async function act(name,op){
   busy[name]=1; render(await (await fetch('/api/state')).json());
-  await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:name,op})});
+  try{
+    const res=await(await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:name,op})})).json();
+    if(!res.ok) toast(name+': '+op+' failed — '+(res.output||'see the acompose ui terminal'),true);
+    else toast(name+' '+(res.output||op),false);
+  }catch(e){ toast(name+': '+op+' request failed',true); }
   delete busy[name]; poll();
+}
+let toastTimer;
+function toast(msg,isErr){
+  let el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='show'+(isErr?' err':'');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.className='';},isErr?6000:2500);
 }
 async function showLogs(name){
   logsFor=name;

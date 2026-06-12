@@ -691,6 +691,56 @@ func cmdDown(p *types.Project, r runner, removeVolumes bool) {
 	okay("down")
 }
 
+// ensureServiceRunning makes a single service run regardless of its current
+// state: a stopped container is started; a missing one (deleted, or never
+// created) is recreated through the same runCmd path `up` uses — network and
+// named volumes ensured, <DEP>_HOST env injected. On success the project's
+// /etc/hosts wiring is refreshed so peers see the (possibly new) IP.
+func ensureServiceRunning(p *types.Project, r runner, name string, publish bool) (bool, string) {
+	svc, exists := p.Services[name]
+	if !exists {
+		return false, "unknown service " + name
+	}
+	cname := cnameOf(p, name)
+
+	if ok, _ := r.run(ctr("start", cname), "not found", "no such", "already running", "exist"); ok {
+		if len(p.Services) > 1 {
+			rewireAll(p, r)
+		}
+		return true, "started"
+	}
+
+	// nothing to start — recreate it the way `up` would
+	image := svc.Image
+	if image == "" {
+		if svc.Build == nil {
+			return false, "service has neither image nor build"
+		}
+		image = p.Name + "-" + name
+	}
+	r.run(ctr("network", "create", p.Name+"-net"), "exist")
+	for _, v := range svc.Volumes {
+		if v.Type == "volume" && v.Source != "" {
+			if cfg, ok := p.Volumes[v.Source]; !ok || !bool(cfg.External) {
+				r.run(ctr("volume", "create", volName(p, v.Source)), "exist")
+			}
+		}
+	}
+	extra := map[string]string{}
+	for dep := range svc.DependsOn {
+		if ip := getIP(r, cnameOf(p, dep)); ip != "" {
+			extra[envKey(dep)] = ip
+		}
+	}
+	if ok, msg := r.run(runCmd(p, cname, p.Name+"-net", image, svc, extra, publish)); !ok {
+		return false, msg
+	}
+	if len(p.Services) > 1 {
+		rewireAll(p, r)
+	}
+	return true, "recreated"
+}
+
 // cmdWatch supervises restart: policies the runtime itself does not enforce
 // (autoheal): poll `container ls --all`, restart anything supervised that is
 // down, then rewire /etc/hosts so peers see the restarted service's new IP.
