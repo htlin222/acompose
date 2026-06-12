@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>acompose — docker-compose.yml on Apple's container CLI</title>
+<meta name="description" content="Run your existing docker-compose.yml on Apple's container — the macOS-native, VM-per-container runtime — without rewriting it. Dependency-ordered startup, service-name DNS, named volumes, restart supervision, live dashboard.">
+<meta property="og:title" content="acompose — docker-compose.yml on Apple's container CLI">
+<meta property="og:description" content="Run your existing compose stack on macOS's VM-per-container runtime. No rewrites, no silent surprises.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛴️</text></svg>">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --dim: #8b949e;
+    --green: #3fb950;
+    --cyan: #39c5cf;
+    --yellow: #d29922;
+    --red: #f85149;
+    --accent: #58a6ff;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header { padding: 72px 0 40px; text-align: center; }
+  h1 { font-family: var(--mono); font-size: 2.6rem; letter-spacing: -1px; }
+  h1 .prompt { color: var(--green); }
+  .tagline { font-size: 1.25rem; color: var(--dim); margin: 12px auto 0; max-width: 620px; }
+  .tagline strong { color: var(--fg); font-weight: 600; }
+  .cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 10px 20px; border-radius: 8px;
+    font-weight: 600; font-size: .95rem; border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--green); color: #04130a; border-color: var(--green); }
+  .btn.primary:hover { filter: brightness(1.1); text-decoration: none; }
+  .btn.ghost:hover { background: var(--bg-soft); text-decoration: none; }
+
+  .term {
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
+    font-family: var(--mono); font-size: .85rem; text-align: left;
+    margin: 40px auto 0; overflow: hidden; max-width: 760px;
+  }
+  .term-bar {
+    display: flex; gap: 6px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); background: #1c2128;
+  }
+  .term-bar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .term-bar i:nth-child(1) { background: #ff5f57; }
+  .term-bar i:nth-child(2) { background: #febc2e; }
+  .term-bar i:nth-child(3) { background: #28c840; }
+  .term pre { padding: 18px 20px; overflow-x: auto; line-height: 1.55; }
+  .g { color: var(--green); } .c { color: var(--cyan); } .y { color: var(--yellow); }
+  .d { color: var(--dim); } .b { font-weight: 700; }
+
+  section { padding: 48px 0 8px; }
+  h2 { font-size: 1.5rem; margin-bottom: 8px; }
+  .sub { color: var(--dim); margin-bottom: 28px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .card h3 { font-size: 1rem; margin-bottom: 6px; }
+  .card h3 code { font-family: var(--mono); color: var(--cyan); font-size: .92em; }
+  .card p { font-size: .9rem; color: var(--dim); }
+  .card p code { font-family: var(--mono); color: var(--fg); font-size: .92em; }
+  .card .src { display: block; margin-top: 10px; font-size: .78rem; color: var(--dim); }
+
+  .limits { border-left: 3px solid var(--yellow); padding-left: 20px; }
+  .limits li { margin: 8px 0 8px 18px; color: var(--dim); }
+  .limits li::marker { color: var(--yellow); }
+  .limits code { font-family: var(--mono); color: var(--fg); font-size: .92em; }
+
+  .install pre {
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
+    font-family: var(--mono); font-size: .9rem; padding: 18px 20px; overflow-x: auto;
+  }
+  .install .d { user-select: none; }
+
+  footer {
+    margin-top: 64px; padding: 28px 0 40px; border-top: 1px solid var(--border);
+    text-align: center; color: var(--dim); font-size: .9rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <h1><span class="prompt">$</span> acompose</h1>
+  <p class="tagline">Run your existing <strong>docker-compose.yml</strong> on
+    <a href="https://github.com/apple/container">Apple's <code style="font-family:var(--mono)">container</code></a> —
+    the macOS-native, VM-per-container runtime — <strong>without rewriting it</strong>.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/htlin222/acompose/releases/latest">Download v0.1.0</a>
+    <a class="btn ghost" href="https://github.com/htlin222/acompose">GitHub</a>
+  </div>
+
+  <div class="term">
+    <div class="term-bar"><i></i><i></i><i></i></div>
+    <pre><span class="d">$</span> acompose up
+<span class="c">::</span> project <span class="b">gitea-postgres</span>  (2 services)  network gitea-postgres-net
+<span class="c">::</span> start order: db → gitea
+<span class="b">run</span>   db  <span class="d">(gitea-postgres-db)</span>
+<span class="b">run</span>   gitea  <span class="d">(gitea-postgres-gitea)</span>
+
+<span class="g">✓</span> stack up
+  db     <span class="g">✓ running</span>  <span class="g">192.168.65.2</span>
+  gitea  <span class="g">✓ running</span>  <span class="g">192.168.65.3</span>  <span class="d">localhost:3000</span>
+
+<span class="d">containers reach each other by service name via /etc/hosts;
+&lt;SERVICE&gt;_HOST env vars are the fallback for shell-less images</span></pre>
+  </div>
+</header>
+
+<section class="wrap">
+  <h2>Every container is its own machine</h2>
+  <p class="sub">Apple <code style="font-family:var(--mono)">container</code> gives each container a lightweight VM
+     with its own real IP — great isolation, zero Compose support. acompose fills that gap
+     and leans into the IP-first model instead of fighting it.</p>
+  <div class="grid">
+    <div class="card">
+      <h3>The real compose spec</h3>
+      <p>Parsing is the official <code>compose-go</code> — the same library Docker Compose uses.
+         <code>${VAR}</code> interpolation, <code>.env</code>, override merging, profiles:
+         the spec implementation, not hand-rolled parsing.</p>
+    </div>
+    <div class="card">
+      <h3>Dependency-ordered startup</h3>
+      <p><code>depends_on</code> resolved topologically, cycles rejected.
+         <code>condition: service_healthy</code> approximated by TCP-polling the
+         dependency's first published port.</p>
+    </div>
+    <div class="card">
+      <h3>Service-name DNS that just works</h3>
+      <p>Every container's name→IP is written into every peer's <code>/etc/hosts</code>,
+         immediately and bidirectionally — unmodified app code connecting to
+         <code>db:5432</code> just works. <code>&lt;SERVICE&gt;_HOST</code> env vars
+         are the fallback for distroless images.</p>
+    </div>
+    <div class="card">
+      <h3>Named volumes, natively</h3>
+      <p>Created on <code>up</code>, kept on <code>down</code>, removed on
+         <code>down -v</code> — the same contract as docker-compose, backed by
+         the runtime's own <code>container volume</code>.</p>
+    </div>
+    <div class="card">
+      <h3><code>acompose watch</code></h3>
+      <p>A built-in supervisor for the <code>restart:</code> policies the runtime
+         doesn't enforce: polls the stack, restarts exited services, re-wires
+         DNS when IPs change.</p>
+      <span class="src">the <a href="https://github.com/willfarrell/docker-autoheal">autoheal</a> idea, native</span>
+    </div>
+    <div class="card">
+      <h3><code>acompose update</code></h3>
+      <p>Pulls newer images and recreates <em>only</em> the services whose manifest
+         digest actually moved; <code>build:</code> services get rebuilt.</p>
+      <span class="src">the <a href="https://github.com/mag37/dockcheck">dockcheck</a> idea, native</span>
+    </div>
+    <div class="card">
+      <h3><code>acompose ui</code></h3>
+      <p>A live dashboard in the same binary: every service as a card with its
+         real IP front and center, status lamp, published ports, logs panel,
+         stop/start. Offline, no CDN.</p>
+    </div>
+    <div class="card">
+      <h3>Loud about platform gaps</h3>
+      <p>Everything the runtime can't honour — exec healthchecks,
+         <code>deploy:</code> limits, x86 images — is warned about at startup.
+         No silent surprises.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap install">
+  <h2>Install</h2>
+  <p class="sub">Requires macOS 26 with Apple's <code style="font-family:var(--mono)">container</code> CLI; Apple Silicon.</p>
+  <pre><span class="d"># grab a release binary</span>
+curl -L https://github.com/htlin222/acompose/releases/latest/download/acompose_0.1.0_darwin_arm64.tar.gz | tar xz
+
+<span class="d"># or build from source</span>
+git clone https://github.com/htlin222/acompose && cd acompose && make build
+
+<span class="d"># then, in any project with a docker-compose.yml</span>
+acompose up --dry-run   <span class="d"># see the exact `container` commands first</span>
+acompose up
+acompose ui             <span class="d"># live dashboard on http://127.0.0.1:4242</span></pre>
+</section>
+
+<section class="wrap">
+  <h2>Honest limitations</h2>
+  <p class="sub">Platform-level gaps a CLI wrapper cannot fix — all warned at startup:</p>
+  <ul class="limits">
+    <li>exec-style healthchecks (TCP polling is the approximation)</li>
+    <li><code>restart:</code> policies aren't enforced by the runtime itself — <code>acompose watch</code> supervises them from the outside instead</li>
+    <li><code>deploy:</code> resource limits</li>
+    <li>x86 (<code>platform: linux/amd64</code>) images are not seamless on this runtime</li>
+    <li>CI parity: your CI runs real Docker Compose; behavior can differ</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="wrap">
+    MIT licensed · <a href="https://github.com/htlin222/acompose">github.com/htlin222/acompose</a>
+    · verified against real stacks from <a href="https://github.com/docker/awesome-compose">awesome-compose</a>
+  </div>
+</footer>
+
+</body>
+</html>

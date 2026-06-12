@@ -3,3 +3,6 @@ acompose-*
 *.tar.gz
 dist/
 .DS_Store
+
+# the landing site is real content — override any global *.html excludes
+!site/*.html
