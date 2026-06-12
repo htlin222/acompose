@@ -25,8 +25,8 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test
-        run: go test ./...
+      - name: go test (race detector)
+        run: go test -race ./...
 
       - name: build (linux)
         run: go build -o acompose ./src
