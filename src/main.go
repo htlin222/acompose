@@ -636,6 +636,10 @@ func cmdUp(p *types.Project, r runner, publish bool, waitTimeout time.Duration) 
 	fmt.Println()
 	if len(notRunning) > 0 {
 		warn("%d service(s) not running — check: acompose logs <svc>", len(notRunning))
+		// the classic case: nginx-style apps resolve peer names while booting,
+		// before our /etc/hosts injection can land (and the runtime regenerates
+		// that file on every boot, so a plain restart cannot win the race)
+		fmt.Fprintf(os.Stderr, "  %sif it resolves peer names at startup (e.g. nginx proxy_pass), use the <SERVICE>_HOST env vars — see 'Reverse proxy' in the README%s\n", dim, reset)
 	} else {
 		okay("stack up")
 	}
@@ -1005,6 +1009,37 @@ func cmdPs(p *types.Project, r runner) {
 	}
 }
 
+// startStopRun powers `acompose start|stop SERVICE` — the single-service
+// counterpart of up/down (also what the menubar plugin's per-service actions
+// invoke). start works from any state via ensureServiceRunning: a stopped
+// container is started, a missing one recreated the way `up` would. Returns
+// the process exit code: 0 ok, 1 failure/unknown service, 2 usage.
+func startStopRun(p *types.Project, r runner, verb string, args []string, publish bool) int {
+	if len(args) < 1 {
+		fail("usage: acompose %s SERVICE", verb)
+		return 2
+	}
+	name := args[0]
+	if _, ok := p.Services[name]; !ok {
+		fail("unknown service '%s' — services: %s", name, strings.Join(toposort(p), ", "))
+		return 1
+	}
+	if verb == "start" {
+		ok, msg := ensureServiceRunning(p, r, name, publish)
+		if !ok {
+			fail("[%s] %s", name, msg)
+			return 1
+		}
+		okay("%s %s", name, msg)
+		return 0
+	}
+	if ok, _ := r.run(ctr("stop", cnameOf(p, name))); !ok {
+		return 1 // runner already printed the loud error
+	}
+	okay("%s stopped", name)
+	return 0
+}
+
 func passthrough(args []string) {
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -1151,6 +1186,14 @@ func main() {
 		cmdDown(p, r, removeVolumes)
 	case "refresh":
 		cmdRefresh(p, r)
+	case "start", "stop":
+		if code := startStopRun(p, r, sub, positional, !noPublish); code != 0 {
+			os.Exit(code)
+		}
+	case "menubar":
+		if code := menubarRun(p); code != 0 {
+			os.Exit(code)
+		}
 	case "watch":
 		cmdWatch(p, r, time.Duration(intervalSec)*time.Second)
 	case "dev":
@@ -1224,11 +1267,13 @@ usage:
   acompose up    [--file F]... [-p NAME] [--dry-run] [--no-publish] [--wait-timeout S]
   acompose down  [--file F]... [-p NAME] [--dry-run] [-v]   (-v also removes named volumes)
   acompose refresh | ps | build
+  acompose start|stop SERVICE      one service
   acompose watch  [--interval S]   supervise restart: policies (autoheal)
   acompose dev   [SERVICE...]        watch develop.watch triggers: sync/rebuild/restart
   acompose update [--dry-run]      pull newer images and recreate (dockcheck)
   acompose stats                   live resource usage
   acompose ui    [ADDR]            live dashboard (default 127.0.0.1:4242)
+  acompose menubar                 SwiftBar/xbar plugin output (see contrib/swiftbar)
   acompose logs  SERVICE [-f]
   acompose exec  SERVICE -- CMD...
   acompose check                   compatibility report for your compose file (no changes made)

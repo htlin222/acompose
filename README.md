@@ -97,6 +97,40 @@ acompose refresh         # after sleep/wake or restarts: re-grab IPs, rewrite ho
 acompose down            # add -v to also remove named volumes
 ```
 
+## Reverse proxy (nginx & friends)
+
+Apps that resolve peer names **while booting** — nginx parsing
+`proxy_pass http://backend` is the classic — race acompose's `/etc/hosts`
+injection and exit with *"host not found in upstream"* (the runtime
+regenerates `/etc/hosts` on every boot, so a restart can't win the race
+either). The supported pattern is the `<SERVICE>_HOST` env var acompose
+always injects, which the official nginx image consumes natively via
+envsubst templates:
+
+```yaml
+services:
+  backend:
+    image: traefik/whoami
+  proxy:
+    image: nginx:alpine
+    depends_on: [backend]          # ensures BACKEND_HOST is known at start
+    ports: ["8080:80"]
+    volumes:
+      - ./default.conf.template:/etc/nginx/templates/default.conf.template
+```
+
+```nginx
+# default.conf.template — envsubst fills BACKEND_HOST at container start
+server {
+  listen 80;
+  location / { proxy_pass http://${BACKEND_HOST}; }
+}
+```
+
+Verified end-to-end on the real runtime. Apps that connect *after* startup
+(databases clients, app servers) don't need any of this — plain service
+names work.
+
 ## Switching from Docker Desktop or OrbStack?
 
 The evaluation funnel, in order — the first two don't touch anything:
