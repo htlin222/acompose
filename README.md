@@ -52,6 +52,16 @@ Requires macOS 26 with Apple's `container` CLI installed; Apple Silicon only.
 
 ## Use
 
+No compose project handy? Get a working demo in two commands:
+
+```sh
+mkdir demo && cd demo
+acompose init            # scaffolds a minimal docker-compose.yml
+acompose up              # then open http://localhost:8080
+```
+
+In a real project:
+
 ```sh
 cd your-project
 acompose up --dry-run    # see the exact `container` commands first

@@ -123,6 +123,7 @@ func loadProject(files []string, name string) *types.Project {
 			fail("no compose file found in %s", abs)
 			fmt.Fprintf(os.Stderr, "  %slooked for compose.yaml / compose.yml / docker-compose.yml / docker-compose.yaml%s\n", dim, reset)
 			fmt.Fprintf(os.Stderr, "  %srun acompose inside your project directory, or point it at one: acompose up --file path/to/docker-compose.yml%s\n", dim, reset)
+			fmt.Fprintf(os.Stderr, "  %sno project yet? scaffold a demo stack: acompose init%s\n", dim, reset)
 			os.Exit(1)
 		}
 		fail("%v", err)
@@ -846,6 +847,49 @@ func passthrough(args []string) {
 // and the Makefile); "dev" means a local, untagged build.
 var version = "dev"
 
+// demoCompose is what `acompose init` scaffolds: the smallest stack that
+// shows something in a browser. whoami prints the container's own IP —
+// exactly the thing acompose is built around.
+const demoCompose = `# a minimal stack to try acompose
+#
+#   acompose up        then open http://localhost:8080
+#   acompose down      when you're done
+#
+services:
+  hello:
+    image: traefik/whoami # tiny multi-arch demo server; the page shows the container's IP
+    ports:
+      - "8080:80"
+
+  # add more services and acompose wires service-name DNS between them, e.g.:
+  #
+  #   db:
+  #     image: postgres:16
+  #     environment:
+  #       POSTGRES_PASSWORD: devpass
+  #   app:
+  #     image: your-app
+  #     depends_on: [db]   # app reaches it at db:5432
+`
+
+var defaultComposeNames = []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
+
+func cmdInit() {
+	for _, n := range defaultComposeNames {
+		if _, err := os.Stat(n); err == nil {
+			fail("%s already exists here — refusing to overwrite", n)
+			os.Exit(1)
+		}
+	}
+	if err := os.WriteFile("docker-compose.yml", []byte(demoCompose), 0o644); err != nil {
+		fail("%v", err)
+		os.Exit(1)
+	}
+	okay("wrote docker-compose.yml (a minimal demo stack)")
+	fmt.Printf("\n  %sacompose up%s        start it, then open %shttp://localhost:8080%s\n", bold, reset, cyan, reset)
+	fmt.Printf("  %sacompose down%s      tear it down\n", bold, reset)
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -854,6 +898,10 @@ func main() {
 	sub := args[0]
 	if sub == "version" || sub == "--version" || sub == "-V" {
 		fmt.Printf("acompose %s\n", version)
+		return
+	}
+	if sub == "init" {
+		cmdInit()
 		return
 	}
 	rest := args[1:]
@@ -970,6 +1018,7 @@ usage:
   acompose ui    [ADDR]            live dashboard (default 127.0.0.1:4242)
   acompose logs  SERVICE [-f]
   acompose exec  SERVICE -- CMD...
+  acompose init                    scaffold a minimal demo docker-compose.yml
   acompose version`)
 	os.Exit(2)
 }

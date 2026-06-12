@@ -207,7 +207,11 @@
 <span class="d"># or build from source</span>
 git clone https://github.com/htlin222/acompose && cd acompose && make install
 
-<span class="d"># then, in any project with a docker-compose.yml</span>
+<span class="d"># no compose project handy? scaffold a demo and see a page in two commands</span>
+acompose init           <span class="d"># writes a minimal docker-compose.yml</span>
+acompose up             <span class="d"># then open http://localhost:8080</span>
+
+<span class="d"># in a real project</span>
 acompose up --dry-run   <span class="d"># see the exact `container` commands first</span>
 acompose up
 acompose ui             <span class="d"># live dashboard on http://127.0.0.1:4242</span></pre>

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -133,5 +135,26 @@ func TestVolName(t *testing.T) {
 	}
 	if got := volName(p, "named"); got != "explicit" {
 		t.Errorf("volName(named) = %q, want explicit", got)
+	}
+}
+
+// The `acompose init` template must stay loadable by compose-go — this is
+// the first thing a brand-new user runs.
+func TestDemoComposeParses(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "docker-compose.yml")
+	if err := os.WriteFile(path, []byte(demoCompose), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := loadProject([]string{path}, "demo")
+	svc, ok := p.Services["hello"]
+	if !ok {
+		t.Fatalf("demo template has no 'hello' service; got %v", p.ServiceNames())
+	}
+	if svc.Image != "traefik/whoami" {
+		t.Errorf("hello image = %q", svc.Image)
+	}
+	if len(svc.Ports) != 1 || svc.Ports[0].Published != "8080" || svc.Ports[0].Target != 80 {
+		t.Errorf("hello ports = %+v, want 8080:80", svc.Ports)
 	}
 }
