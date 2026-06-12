@@ -116,6 +116,15 @@ func loadProject(files []string, name string) *types.Project {
 	}
 	project, err := po.LoadProject(context.Background())
 	if err != nil {
+		// compose-go's bare "no configuration file provided: not found" is
+		// the #1 first-run stumble — say what we looked for and what to do.
+		if strings.Contains(err.Error(), "no configuration file provided") {
+			abs, _ := filepath.Abs(dir)
+			fail("no compose file found in %s", abs)
+			fmt.Fprintf(os.Stderr, "  %slooked for compose.yaml / compose.yml / docker-compose.yml / docker-compose.yaml%s\n", dim, reset)
+			fmt.Fprintf(os.Stderr, "  %srun acompose inside your project directory, or point it at one: acompose up --file path/to/docker-compose.yml%s\n", dim, reset)
+			os.Exit(1)
+		}
 		fail("%v", err)
 		os.Exit(1)
 	}
