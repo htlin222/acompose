@@ -38,14 +38,22 @@
   h1 .prompt { color: var(--green); }
   .tagline { font-size: 1.25rem; color: var(--dim); margin: 12px auto 0; max-width: 620px; }
   .tagline strong { color: var(--fg); font-weight: 600; }
-  .cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; align-items: center; }
   .btn {
     display: inline-block; padding: 10px 20px; border-radius: 8px;
     font-weight: 600; font-size: .95rem; border: 1px solid var(--border);
   }
-  .btn.primary { background: var(--green); color: #04130a; border-color: var(--green); }
-  .btn.primary:hover { filter: brightness(1.1); text-decoration: none; }
   .btn.ghost:hover { background: var(--bg-soft); text-decoration: none; }
+  .brew {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-family: var(--mono); font-size: .95rem;
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 16px; cursor: pointer; color: var(--fg);
+  }
+  .brew:hover { border-color: var(--green); }
+  .brew .d { user-select: none; }
+  .brew .copy { color: var(--dim); font-size: .8rem; user-select: none; }
+  .brew.copied .copy { color: var(--green); }
 
   .term {
     background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
@@ -108,7 +116,10 @@
     <a href="https://github.com/apple/container">Apple's <code style="font-family:var(--mono)">container</code></a> —
     the macOS-native, VM-per-container runtime — <strong>without rewriting it</strong>.</p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/htlin222/acompose/releases/latest">Download v0.1.0</a>
+    <button class="brew" id="brew-cmd" title="copy to clipboard">
+      <span><span class="d">$ </span>brew install htlin222/tap/acompose</span>
+      <span class="copy">⧉ copy</span>
+    </button>
     <a class="btn ghost" href="https://github.com/htlin222/acompose">GitHub</a>
   </div>
 
@@ -221,5 +232,18 @@ acompose ui             <span class="d"># live dashboard on http://127.0.0.1:424
   </div>
 </footer>
 
+<script>
+  const brew = document.getElementById('brew-cmd');
+  brew.addEventListener('click', () => {
+    navigator.clipboard.writeText('brew install htlin222/tap/acompose').then(() => {
+      brew.classList.add('copied');
+      brew.querySelector('.copy').textContent = '✓ copied';
+      setTimeout(() => {
+        brew.classList.remove('copied');
+        brew.querySelector('.copy').textContent = '⧉ copy';
+      }, 1600);
+    });
+  });
+</script>
 </body>
 </html>
