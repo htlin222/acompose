@@ -1,7 +1,14 @@
 # acompose
 
+[![ci](https://github.com/htlin222/acompose/actions/workflows/ci.yml/badge.svg)](https://github.com/htlin222/acompose/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/htlin222/acompose)](https://github.com/htlin222/acompose/releases/latest)
+[![brew](https://img.shields.io/badge/brew-htlin222%2Ftap%2Facompose-orange)](https://github.com/htlin222/homebrew-tap)
+[![license](https://img.shields.io/github/license/htlin222/acompose)](LICENSE)
+
 Run your existing `docker-compose.yml` on [Apple's `container`](https://github.com/apple/container) —
 the macOS-native, VM-per-container runtime — without rewriting it.
+
+![acompose demo](assets/demo.gif)
 
 Apple `container` gives every container its own lightweight VM with its own
 real IP. That's great for isolation, but it ships with no Compose support,
@@ -91,9 +98,17 @@ Platform-level gaps a CLI wrapper cannot fix — all warned at startup:
 - x86 (`platform: linux/amd64`) images are not seamless on this runtime
 - CI parity: your CI runs real Docker Compose; behavior can differ
 
+## Tested against
+
+| acompose | Apple `container` CLI | macOS | hardware |
+| -------- | --------------------- | ----- | -------- |
+| v0.1.x   | 1.0.0                 | 26.2  | Apple Silicon (arm64) |
+
 The `container` CLI is young and its flags shift between releases. Every
 subcommand acompose issues is constructed in one place (`ctr`/`runCmd`/
-`buildCmd` in `src/main.go`), so adapting to a renamed flag is a one-line fix.
+`buildCmd` in `src/main.go`), so adapting to a renamed flag is a one-line fix —
+if a newer CLI broke something, [open an issue](https://github.com/htlin222/acompose/issues)
+with your `container --version`.
 
 ## Repo layout
 

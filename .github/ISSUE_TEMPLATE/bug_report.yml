@@ -1,0 +1,44 @@
+name: Bug report
+description: Something didn't work
+labels: [bug]
+body:
+  - type: input
+    id: acompose-version
+    attributes:
+      label: acompose version
+      description: Output of `acompose version`
+      placeholder: acompose 0.1.5
+    validations:
+      required: true
+  - type: input
+    id: container-version
+    attributes:
+      label: Apple container CLI version
+      description: Output of `container --version` — the CLI is young and flags shift between releases, so this matters a lot
+      placeholder: container CLI version 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "26.2"
+  - type: textarea
+    id: compose
+    attributes:
+      label: Compose file (or minimal reproduction)
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: dryrun
+    attributes:
+      label: Output of `acompose up --dry-run`
+      description: This shows the exact `container` commands acompose generates — usually enough to pinpoint a translation bug without your hardware
+      render: shell
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true

@@ -1,0 +1,20 @@
+name: Feature request
+description: Something acompose should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The compose feature or workflow you need — a snippet of your compose file helps
+    validations:
+      required: true
+  - type: textarea
+    id: platform-check
+    attributes:
+      label: Can the platform do it?
+      description: >
+        acompose can only translate to what Apple's `container` CLI supports —
+        if the runtime can't do it (e.g. exec healthchecks, deploy limits),
+        the answer will be a loud warning rather than the feature. If you know
+        the relevant `container` subcommand/flag, mention it.

@@ -6,6 +6,18 @@ on:
   pull_request:
 
 jobs:
+  # the actual target platform — the runner can't host Apple container VMs,
+  # but unit tests (incl. the fake-binary harness) and the build must pass here
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: go build -o /dev/null ./src
+
   build-and-check:
     runs-on: ubuntu-latest
     steps:
