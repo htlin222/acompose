@@ -434,16 +434,29 @@ func envKey(name string) string {
 	return regexp.MustCompile(`[^A-Z0-9]`).ReplaceAllString(strings.ToUpper(name), "_") + "_HOST"
 }
 
+// hostsWarned dedupes the per-service /etc/hosts warning — a shell-less
+// image would otherwise warn once per injection (N times on a big stack).
+var hostsWarned = map[string]bool{}
+
 func wireHosts(r runner, cname string, pairs [][2]string, svc string) {
 	if len(pairs) == 0 {
 		return
 	}
-	if ok, msg := r.run(hostsInjectCmd(cname, pairs)); !ok && !r.dry {
-		if strings.Contains(strings.ToLower(msg), "permission denied") {
-			warn("[%s] /etc/hosts not writable (image runs as non-root) — use the <SERVICE>_HOST env vars", svc)
-		} else {
-			warn("[%s] could not write /etc/hosts (shell-less image?) — use the <SERVICE>_HOST env vars instead", svc)
-		}
+	// Tolerate the two benign, well-understood failure modes so they get one
+	// dim warning instead of a loud "command failed" + raw runtime error.
+	ok, msg := r.run(hostsInjectCmd(cname, pairs), "permission denied", "failed to find target executable")
+	if ok || r.dry || hostsWarned[svc] {
+		return
+	}
+	hostsWarned[svc] = true
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "failed to find target executable"):
+		warn("[%s] image has no shell — service-name DNS unavailable; peers can use the <SERVICE>_HOST env vars", svc)
+	case strings.Contains(low, "permission denied"):
+		warn("[%s] /etc/hosts not writable (image runs as non-root) — use the <SERVICE>_HOST env vars", svc)
+	default:
+		warn("[%s] could not write /etc/hosts — use the <SERVICE>_HOST env vars instead", svc)
 	}
 }
 
@@ -505,9 +518,20 @@ func cmdUp(p *types.Project, r runner, publish bool, waitTimeout time.Duration) 
 		}
 
 		fmt.Printf("%srun%s   %s  %s(%s)%s\n", bold, reset, name, dim, cname, reset)
-		if ok, _ := r.run(runCmd(p, cname, network, image, svc, extra, publish)); !ok && !r.dry {
-			fail("[%s] failed to start — aborting (already-started services keep running; `down` to clean)", name)
-			os.Exit(1)
+		if ok, msg := r.run(runCmd(p, cname, network, image, svc, extra, publish), "already exists"); !ok && !r.dry {
+			// idempotent up, like docker-compose: an existing container is
+			// started (no-op if it's already running), not a fatal error
+			if strings.Contains(strings.ToLower(msg), "already exists") {
+				info("[%s] container exists — starting it", name)
+				if started, smsg := r.run(ctr("start", cname), "running", "started"); !started &&
+					!strings.Contains(strings.ToLower(smsg), "running") {
+					fail("[%s] failed to start existing container — `down` to clean, then `up` again", name)
+					os.Exit(1)
+				}
+			} else {
+				fail("[%s] failed to start — aborting (already-started services keep running; `down` to clean)", name)
+				os.Exit(1)
+			}
 		}
 
 		ips[name] = getIP(r, cname)
@@ -515,17 +539,21 @@ func cmdUp(p *types.Project, r runner, publish bool, waitTimeout time.Duration) 
 			warn("[%s] could not determine IP — service-name DNS for it will be missing", name)
 		}
 
-		// RACE FIX: wire hosts NOW, bidirectionally —
-		known := [][2]string{}
-		for _, s := range append(append([]string{}, started...), name) {
-			if ips[s] != "" {
-				known = append(known, [2]string{s, ips[s]})
+		// RACE FIX: wire hosts NOW, bidirectionally — but only when there are
+		// peers to reach; a single-service stack has nobody to talk to, and
+		// exec-ing into it just risks noise (shell-less images, non-root).
+		if len(order) > 1 {
+			known := [][2]string{}
+			for _, s := range append(append([]string{}, started...), name) {
+				if ips[s] != "" {
+					known = append(known, [2]string{s, ips[s]})
+				}
 			}
-		}
-		wireHosts(r, cname, known, name)
-		if ips[name] != "" {
-			for _, prev := range started {
-				wireHosts(r, cnameOf(p, prev), [][2]string{{name, ips[name]}}, prev)
+			wireHosts(r, cname, known, name)
+			if ips[name] != "" {
+				for _, prev := range started {
+					wireHosts(r, cnameOf(p, prev), [][2]string{{name, ips[name]}}, prev)
+				}
 			}
 		}
 		started = append(started, name)
@@ -595,8 +623,11 @@ func cmdRefresh(p *types.Project, r runner) {
 // rewireAll re-reads every service's IP, scrubs stale service-name lines from
 // each container's /etc/hosts, and re-injects the full current set.
 func rewireAll(p *types.Project, r runner) {
-	ips := map[string]string{}
 	names := toposort(p)
+	if len(names) < 2 {
+		return // no peers — nothing to wire
+	}
+	ips := map[string]string{}
 	for _, name := range names {
 		if ip := getIP(r, cnameOf(p, name)); ip != "" {
 			ips[name] = ip
@@ -619,7 +650,8 @@ func rewireAll(p *types.Project, r runner) {
 	for _, name := range names {
 		cname := cnameOf(p, name)
 		cleanup := fmt.Sprintf(`grep -vE '\s(%s)$' /etc/hosts > /tmp/h && cat /tmp/h > /etc/hosts`, pattern)
-		r.run(ctr("exec", cname, "sh", "-c", cleanup))
+		// benign on shell-less / non-root images; wireHosts warns once below
+		r.run(ctr("exec", cname, "sh", "-c", cleanup), "failed to find target executable", "permission denied")
 		wireHosts(r, cname, pairs, name)
 	}
 }
