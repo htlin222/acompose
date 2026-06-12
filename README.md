@@ -110,6 +110,28 @@ subcommand acompose issues is constructed in one place (`ctr`/`runCmd`/
 if a newer CLI broke something, [open an issue](https://github.com/htlin222/acompose/issues)
 with your `container --version`.
 
+## FAQ
+
+**Why not Podman?** There's no gap to fill: Podman has
+[podman-compose](https://github.com/containers/podman-compose), and its
+Docker-compatible API socket means plain `docker compose` works against it
+too. acompose exists only because Apple's `container` has no Compose support.
+Podman on macOS is also a single shared Linux VM — none of the
+VM-per-container, IP-first properties this tool is built around apply there.
+
+**Why not Kubernetes?** Different abstraction, and the road is blocked at the
+platform level anyway: compose→manifest conversion is
+[kompose](https://kompose.io)'s job, and using Apple `container` as a k8s node
+runtime would require a CRI implementation, which doesn't exist. If that ever
+changes, this answer gets revisited.
+
+**So what IS portable?** Your compose file. acompose parses it with the
+official compose-go and invents no syntax of its own — the same
+`docker-compose.yml` runs via acompose on your Mac, real Docker Compose in CI,
+podman-compose on a Podman box, or `kompose convert` on the way to a cluster.
+The runner is per-platform; the file is the contract, and acompose will never
+hold it hostage.
+
 ## Repo layout
 
 - `src/main.go`, `src/ui.go` — the Go implementation (the real one);
