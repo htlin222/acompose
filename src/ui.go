@@ -138,6 +138,46 @@ func collectState(p *types.Project) uiState {
 	return st
 }
 
+// hostAllowed defends the dashboard against DNS-rebinding: a browser pointed
+// at a malicious domain that resolves to 127.0.0.1 sends that domain in the
+// Host header, so we only serve requests whose Host is a loopback name. An
+// empty Host (HTTP/1.0, some tools) is allowed for local curl convenience.
+func isLoopbackHost(h string) bool {
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+func hostAllowed(host string) bool {
+	if host == "" {
+		return true
+	}
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	return h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]"
+}
+
+// stateChanging guards the POST control endpoint against cross-site requests:
+// require a JSON content type (blocks the form-based CSRF "simple request")
+// and a loopback Host (blocks DNS rebinding). The dashboard's own fetch() sets
+// application/json and a localhost Host, so it is unaffected.
+func guardStateChanging(req *http.Request) (int, string) {
+	if !hostAllowed(req.Host) {
+		return http.StatusForbidden, "host not allowed (DNS-rebinding guard)"
+	}
+	if ct := req.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		return http.StatusUnsupportedMediaType, "Content-Type must be application/json"
+	}
+	if site := req.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return http.StatusForbidden, "cross-site request refused"
+	}
+	return 0, ""
+}
+
 func cmdUI(p *types.Project, addr string, explicit bool) {
 	mux := http.NewServeMux()
 
@@ -171,6 +211,10 @@ func cmdUI(p *types.Project, addr string, explicit bool) {
 			http.Error(w, "POST only", 405)
 			return
 		}
+		if code, msg := guardStateChanging(req); code != 0 {
+			http.Error(w, msg, code)
+			return
+		}
 		var body struct{ Service, Op string }
 		if json.NewDecoder(req.Body).Decode(&body) != nil {
 			http.Error(w, "bad json", 400)
@@ -200,6 +244,10 @@ func cmdUI(p *types.Project, addr string, explicit bool) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "output": detail})
 	})
+
+	if h, _, e := net.SplitHostPort(addr); e == nil && !isLoopbackHost(h) {
+		warn("binding %s — the dashboard can stop/recreate containers and has no auth; anyone who can reach this address controls your stack", addr)
+	}
 
 	ln, bound, err := listenUI(addr, explicit)
 	if err != nil {
@@ -331,7 +379,7 @@ function render(st){
   g.innerHTML=st.services.map(s=>{
     const ip=s.ip?'<div class="ip" tabindex="0" title="click to copy" onclick="copy(this,\''+esc(s.ip)+'\')">'+esc(s.ip)+'</div>'
                  :'<div class="ip none">'+(s.state==='running'?'address unknown':'not running')+'</div>';
-    const ports=(s.ports||[]).map(p=>'<a class="port" href="http://localhost:'+p.host+'" target="_blank" rel="noopener">localhost:'+p.host+' \u2192 '+p.target+'</a>').join('');
+    const ports=(s.ports||[]).map(p=>'<a class="port" href="http://localhost:'+encodeURIComponent(p.host)+'" target="_blank" rel="noopener">localhost:'+esc(p.host)+' \u2192 '+esc(p.target)+'</a>').join('');
     const deps=(s.deps&&s.deps.length)?'<br>needs <b>'+s.deps.map(esc).join(', ')+'</b>':'';
     const op=s.state==='running'?'stop':'start';
     const dis=busy[s.name]?' disabled':'';

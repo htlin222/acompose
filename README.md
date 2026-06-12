@@ -178,6 +178,23 @@ subcommand acompose issues is constructed in one place (`ctr`/`runCmd`/
 if a newer CLI broke something, [open an issue](https://github.com/htlin222/acompose/issues)
 with your `container --version`.
 
+## Security
+
+- **The `ui` dashboard binds `127.0.0.1` and is protected against
+  cross-site abuse**: the control endpoint requires a JSON content type and a
+  loopback `Host` header, so no other website (or DNS-rebound name) can drive
+  it. Binding a non-loopback address (`acompose ui 0.0.0.0:…`) exposes an
+  unauthenticated control API and is warned about loudly — don't do it on an
+  untrusted network.
+- **Treat a compose file like a script you're about to run.** `acompose up`
+  executes the images and build steps it names; `image:`, `volume`, and
+  `working_dir` values become `container` CLI arguments. Running an untrusted
+  compose file is as risky as running any untrusted code — review it (or
+  `acompose check` it) first.
+- Compose `secrets:`/`configs:` are not mounted (warned, not leaked).
+  `environment:` values appear in the `container run` argv, visible in
+  `--dry-run` output and `ps` — same as Docker Compose.
+
 ## FAQ
 
 **vs OrbStack?** Different layer and a different bet. OrbStack is a complete

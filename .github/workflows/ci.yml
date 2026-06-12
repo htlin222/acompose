@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   # the actual target platform — the runner can't host Apple container VMs,
   # but unit tests (incl. the fake-binary harness) and the build must pass here
@@ -36,6 +39,9 @@ jobs:
 
       - name: go vet
         run: go vet ./...
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - name: go test (race detector)
         run: go test -race ./...
