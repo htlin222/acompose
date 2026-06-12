@@ -3,7 +3,9 @@ package main
 // Exhaustive tables for the pure helpers, plus the local-socket waitTCP tests.
 
 import (
+	"fmt"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -347,6 +349,74 @@ func TestNamedVolumes(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("namedVolumes = %v, want %v", got, want)
 	}
+}
+
+func TestListenUI(t *testing.T) {
+	t.Run("free address binds as-is", func(t *testing.T) {
+		ln, bound, err := listenUI("127.0.0.1:0", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		if bound != "127.0.0.1:0" {
+			t.Errorf("bound = %q", bound)
+		}
+	})
+	t.Run("busy default walks to the next free port", func(t *testing.T) {
+		taken, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer taken.Close()
+		addr := taken.Addr().String()
+		captureOutput(t, func() { // swallow the "was busy — using ..." narration
+			ln, bound, err := listenUI(addr, false)
+			if err != nil {
+				t.Fatalf("expected fallback port, got %v", err)
+			}
+			defer ln.Close()
+			if bound == addr {
+				t.Error("must not report the busy address as bound")
+			}
+		})
+	})
+	t.Run("busy explicit address fails", func(t *testing.T) {
+		taken, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer taken.Close()
+		if ln, _, err := listenUI(taken.Addr().String(), true); err == nil {
+			ln.Close()
+			t.Error("explicit busy address must error, not fall back")
+		}
+	})
+}
+
+func TestProbeUI(t *testing.T) {
+	t.Run("recognizes a dashboard", func(t *testing.T) {
+		ln, _ := net.Listen("tcp", "127.0.0.1:0")
+		defer ln.Close()
+		go func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/state", func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `{"project":"demo"}`)
+			})
+			_ = http.Serve(ln, mux)
+		}()
+		proj, ok := probeUI(ln.Addr().String())
+		if !ok || proj != "demo" {
+			t.Errorf("probeUI = (%q, %v), want (demo, true)", proj, ok)
+		}
+	})
+	t.Run("non-dashboard listener is not claimed", func(t *testing.T) {
+		ln, _ := net.Listen("tcp", "127.0.0.1:0")
+		defer ln.Close()
+		go func() { _ = http.Serve(ln, http.NotFoundHandler()) }()
+		if _, ok := probeUI(ln.Addr().String()); ok {
+			t.Error("404 server must not be recognized as a dashboard")
+		}
+	})
 }
 
 func TestEnsureServiceRunning(t *testing.T) {

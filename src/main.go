@@ -1069,10 +1069,11 @@ func main() {
 		cmdPs(p, r)
 	case "ui":
 		addr := "127.0.0.1:4242"
-		if len(positional) > 0 {
+		explicit := len(positional) > 0
+		if explicit {
 			addr = positional[0]
 		}
-		cmdUI(p, addr)
+		cmdUI(p, addr, explicit)
 	case "build":
 		for _, name := range toposort(p) {
 			svc := p.Services[name]

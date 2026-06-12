@@ -13,14 +13,64 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 )
+
+// probeUI checks whether an acompose dashboard already answers on addr and
+// returns its project name.
+func probeUI(addr string) (string, bool) {
+	client := http.Client{Timeout: 700 * time.Millisecond}
+	resp, err := client.Get("http://" + addr + "/api/state")
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Project string `json:"project"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&st) != nil || st.Project == "" {
+		return "", false
+	}
+	return st.Project, true
+}
+
+// listenUI binds addr; when addr is the non-explicit default and busy, it
+// walks up to the next free port instead of dying — the default is a
+// convenience, not a contract.
+func listenUI(addr string, explicit bool) (net.Listener, string, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err == nil {
+		return ln, addr, nil
+	}
+	if proj, ok := probeUI(addr); ok {
+		warn("another acompose ui (project %s%s%s) is already running on %s", bold, proj, reset, addr)
+	}
+	if explicit {
+		return nil, "", err
+	}
+	host, portStr, splitErr := net.SplitHostPort(addr)
+	if splitErr != nil {
+		return nil, "", err
+	}
+	port, _ := strconv.Atoi(portStr)
+	for p := port + 1; p <= port+20; p++ {
+		next := net.JoinHostPort(host, strconv.Itoa(p))
+		if ln, e := net.Listen("tcp", next); e == nil {
+			info("%s was busy — using %s instead", addr, next)
+			return ln, next, nil
+		}
+	}
+	return nil, "", err
+}
 
 type svcState struct {
 	Name  string     `json:"name"`
@@ -88,7 +138,7 @@ func collectState(p *types.Project) uiState {
 	return st
 }
 
-func cmdUI(p *types.Project, addr string) {
+func cmdUI(p *types.Project, addr string, explicit bool) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
@@ -151,10 +201,16 @@ func cmdUI(p *types.Project, addr string) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "output": detail})
 	})
 
-	url := "http://" + strings.Replace(addr, "0.0.0.0", "localhost", 1)
+	ln, bound, err := listenUI(addr, explicit)
+	if err != nil {
+		fail("%v", err)
+		fmt.Fprintf(os.Stderr, "  %spick another address: acompose ui 127.0.0.1:PORT%s\n", dim, reset)
+		os.Exit(1)
+	}
+	url := "http://" + strings.Replace(bound, "0.0.0.0", "localhost", 1)
 	info("dashboard on %s%s%s  (Ctrl-C to quit)", bold, url, reset)
 	_ = exec.Command("open", url).Start() // best-effort on macOS; harmless elsewhere
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.Serve(ln, mux); err != nil {
 		fail("%v", err)
 	}
 }
