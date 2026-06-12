@@ -172,6 +172,24 @@ func TestParseIntervalArg(t *testing.T) {
 	}
 }
 
+// printUsage must list every dispatched subcommand — a help screen that
+// omits a command is how a feature becomes undiscoverable. (help itself
+// goes to stdout with exit 0; the wrong-invocation path is usage()→stderr.)
+func TestPrintUsageListsSubcommands(t *testing.T) {
+	var b strings.Builder
+	printUsage(&b)
+	out := b.String()
+	for _, cmd := range []string{
+		"up", "down", "refresh", "ps", "build", "start", "stop", "watch",
+		"dev", "update", "stats", "ui", "menubar", "logs", "exec", "check",
+		"dns", "import-volumes", "init", "doctor", "version", "help",
+	} {
+		if !strings.Contains(out, cmd) {
+			t.Errorf("usage screen does not mention %q", cmd)
+		}
+	}
+}
+
 // The `acompose init` template must stay loadable by compose-go — this is
 // the first thing a brand-new user runs.
 func TestDemoComposeParses(t *testing.T) {

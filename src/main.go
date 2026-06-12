@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -1127,6 +1128,12 @@ func main() {
 		cmdDoctor()
 		return
 	}
+	if sub == "help" || sub == "-h" || sub == "--help" {
+		// explicit help is success and goes to stdout (so `acompose help | less`
+		// works); a wrong invocation still hits usage() → stderr + exit 2
+		printUsage(os.Stdout)
+		return
+	}
 	rest := args[1:]
 
 	var files []string
@@ -1260,8 +1267,8 @@ func main() {
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `acompose — docker-compose.yml on Apple's container CLI
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, `acompose — docker-compose.yml on Apple's container CLI
 
 usage:
   acompose up    [--file F]... [-p NAME] [--dry-run] [--no-publish] [--wait-timeout S]
@@ -1281,6 +1288,10 @@ usage:
   acompose import-volumes [VOL...]  copy named-volume data from Docker/OrbStack
   acompose init                    scaffold a minimal demo docker-compose.yml
   acompose doctor                  check this machine is ready to run acompose
-  acompose version`)
+  acompose version | help`)
+}
+
+func usage() {
+	printUsage(os.Stderr)
 	os.Exit(2)
 }
