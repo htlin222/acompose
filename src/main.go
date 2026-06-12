@@ -1130,8 +1130,13 @@ func main() {
 	}
 	if sub == "help" || sub == "-h" || sub == "--help" {
 		// explicit help is success and goes to stdout (so `acompose help | less`
-		// works); a wrong invocation still hits usage() → stderr + exit 2
-		printUsage(os.Stdout)
+		// works); a wrong invocation still hits usage() → stderr + exit 2.
+		// `acompose help <command>` prints that command's detail.
+		topic := ""
+		if len(args) > 1 {
+			topic = args[1]
+		}
+		printHelp(os.Stdout, topic)
 		return
 	}
 	rest := args[1:]
@@ -1267,28 +1272,165 @@ func main() {
 	}
 }
 
+// printUsage writes the grouped command overview. b/c/d/etc. color vars are
+// empty under non-TTY (and in tests), so this is plain there.
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, `acompose — docker-compose.yml on Apple's container CLI
+	h := func(s string) string { return bold + s + reset }
+	fmt.Fprintf(w, `%s — run your docker-compose.yml on Apple's container CLI  (%s)
 
-usage:
-  acompose up    [--file F]... [-p NAME] [--dry-run] [--no-publish] [--wait-timeout S]
-  acompose down  [--file F]... [-p NAME] [--dry-run] [-v]   (-v also removes named volumes)
-  acompose refresh | ps | build
-  acompose start|stop SERVICE      one service
-  acompose watch  [--interval S]   supervise restart: policies (autoheal)
-  acompose dev   [SERVICE...]        watch develop.watch triggers: sync/rebuild/restart
-  acompose update [--dry-run]      pull newer images and recreate (dockcheck)
-  acompose stats                   live resource usage
-  acompose ui    [ADDR]            live dashboard (default 127.0.0.1:4242)
-  acompose menubar                 SwiftBar/xbar plugin output (see contrib/swiftbar)
-  acompose logs  SERVICE [-f]
-  acompose exec  SERVICE -- CMD...
-  acompose check                   compatibility report for your compose file (no changes made)
-  acompose dns   [setup|status|teardown]   host DNS names via container system dns
-  acompose import-volumes [VOL...]  copy named-volume data from Docker/OrbStack
-  acompose init                    scaffold a minimal demo docker-compose.yml
-  acompose doctor                  check this machine is ready to run acompose
-  acompose version | help`)
+%s
+  acompose init             scaffold a demo stack to try it out
+  acompose up               start your stack          %sthen: acompose ui%s
+  acompose down [-v]         stop it  %s(-v also removes named volumes)%s
+
+%s
+  up     [--file F]... [-p NAME] [--dry-run] [--no-publish] [--wait-timeout S]
+  down   [--file F]... [-p NAME] [--dry-run] [-v]
+  build                     build images only, no run
+  update [--dry-run]        pull newer images, recreate only what changed
+  start|stop SERVICE        act on a single service
+  refresh                   re-grab IPs + rewrite /etc/hosts after sleep/wake
+
+%s
+  ps                        list this project's containers
+  stats                     live resource usage
+  logs   SERVICE [-f]       container logs (-f to follow)
+  exec   SERVICE -- CMD     run a command inside a service
+  ui     [ADDR]             live web dashboard (default 127.0.0.1:4242)
+  menubar                   SwiftBar/xbar plugin output (contrib/swiftbar)
+  check                     compatibility report — will this file translate?
+
+%s
+  dev    [SERVICE...]       hot reload via develop.watch (sync/rebuild/restart)
+  watch  [--interval S]     supervise restart: policies (autoheal)
+
+%s
+  dns    [setup|status|teardown]    host DNS names via container system dns
+
+%s
+  doctor                    check this machine is ready
+  import-volumes [VOL...]   copy named-volume data from Docker/OrbStack
+
+  version          %sprint the version%s
+  help [COMMAND]   %sthis screen, or detail for one command%s
+
+%sDocs%s https://github.com/htlin222/acompose
+`,
+		h("acompose"), version,
+		h("QUICK START"), dim, reset, dim, reset,
+		h("RUN A STACK"),
+		h("INSPECT"),
+		h("DEVELOP"),
+		h("NETWORKING"),
+		h("MIGRATE FROM DOCKER / ORBSTACK"),
+		dim, reset, dim, reset,
+		dim, reset)
+}
+
+// commandHelp holds the per-command detail printed by `acompose help <cmd>`.
+// Commands not listed fall back to the overview.
+var commandHelp = map[string]string{
+	"up": `acompose up — start the stack
+
+  acompose up [--file F]... [-p NAME] [--dry-run] [--no-publish] [--wait-timeout S]
+
+Starts every service in depends_on order. service_healthy conditions are
+approximated by TCP-polling the dependency's first published port. Each
+container's real IP is wired into every peer's /etc/hosts (and <SERVICE>_HOST
+env vars are injected as a fallback for shell-less images).
+
+  --file F          a compose file to use (repeatable); overrides auto-discovery
+  -p NAME           project name (default: the directory name)
+  --dry-run         print the exact 'container' commands without running them
+  --no-publish      don't publish ports: to the host
+  --wait-timeout S  seconds to wait on a service_healthy dependency (default 30)
+
+  up is idempotent: an already-created container is started, not re-created.`,
+
+	"down": `acompose down — stop and remove the stack
+
+  acompose down [--file F]... [-p NAME] [--dry-run] [-v]
+
+Tears down in reverse dependency order and removes the project network.
+
+  -v   also delete named volumes (otherwise they are kept; data survives)`,
+
+	"dev": `acompose dev — hot reload from develop.watch
+
+  acompose dev [SERVICE...] [--interval S]
+
+Watches the paths in each service's develop.watch section and reacts:
+  sync          copy changed files into the running container
+  rebuild       rebuild the image and recreate the container
+  restart       restart the container
+  sync+restart  copy, then restart
+
+A polling watcher (no fsnotify dependency). .git / node_modules / .DS_Store
+are always ignored; trigger 'ignore:' patterns add to that. --interval sets
+the poll period in seconds (default 1). Refuses --dry-run.`,
+
+	"dns": `acompose dns — host-side DNS names for your services
+
+  acompose dns [status|setup|teardown]
+
+Wraps the runtime's native 'container system dns' so a service is reachable
+from your browser at <container-name>.<project>. setup needs admin once
+(it prints the exact 'sudo container system dns create ...' if so).
+
+  status     (default) show whether the project domain is configured + names
+  setup      create the local DNS domain for this project
+  teardown   remove it`,
+
+	"check": `acompose check — compatibility report (no changes made)
+
+  acompose check [--file F]... [-p NAME]
+
+Reads your compose file and reports, per service, what translates cleanly,
+what is approximated, and what would block — without touching the runtime.
+Great for deciding whether a project can move over before you run anything.
+Exit 0 when there are no blockers, 1 when there are.`,
+
+	"import-volumes": `acompose import-volumes — bring your data across
+
+  acompose import-volumes [VOLUME-KEY...] [--dry-run]
+
+Copies named-volume DATA from Docker/OrbStack into Apple container volumes
+(docker tars the volume, container untars it). Docker must still be installed
+when you run this. With no args, every named volume is migrated; pass keys to
+limit it. Refuses to overwrite a non-empty target volume.`,
+
+	"ui": `acompose ui — live web dashboard
+
+  acompose ui [ADDR]
+
+Serves a dashboard (default 127.0.0.1:4242): every service as a card with its
+real IP, status, ports, logs, and start/stop. Binding a non-loopback ADDR
+exposes an unauthenticated control API and is warned about — keep it on
+localhost.`,
+
+	"doctor": `acompose doctor — is this machine ready?
+
+  acompose doctor
+
+Checks architecture, macOS version, the container CLI and its version against
+the tested one, the system service, and whether a compose file is present.
+Works without a compose file. Exit 1 if anything is broken.`,
+}
+
+// printHelp prints the overview, or one command's detail for `help <cmd>`.
+func printHelp(w io.Writer, topic string) {
+	if topic == "" {
+		printUsage(w)
+		return
+	}
+	topic = strings.TrimLeft(topic, "-")
+	if detail, ok := commandHelp[topic]; ok {
+		fmt.Fprintln(w, detail)
+		return
+	}
+	// unknown or detail-less command — point back at the overview
+	fmt.Fprintf(w, "no extra detail for %q; here's the overview:\n\n", topic)
+	printUsage(w)
 }
 
 func usage() {

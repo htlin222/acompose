@@ -190,6 +190,52 @@ func TestPrintUsageListsSubcommands(t *testing.T) {
 	}
 }
 
+func TestPrintHelpTopics(t *testing.T) {
+	t.Run("empty topic prints the overview", func(t *testing.T) {
+		var b strings.Builder
+		printHelp(&b, "")
+		if !strings.Contains(b.String(), "QUICK START") {
+			t.Error("help with no topic should print the grouped overview")
+		}
+	})
+	t.Run("known command prints its detail, not the overview", func(t *testing.T) {
+		var b strings.Builder
+		printHelp(&b, "up")
+		out := b.String()
+		if !strings.Contains(out, "--wait-timeout") || strings.Contains(out, "QUICK START") {
+			t.Errorf("help up should print up's detail only:\n%s", out)
+		}
+	})
+	t.Run("leading dashes are tolerated", func(t *testing.T) {
+		var b strings.Builder
+		printHelp(&b, "--dns")
+		if !strings.Contains(b.String(), "container system dns") {
+			t.Error("help --dns should resolve to the dns detail")
+		}
+	})
+	t.Run("unknown command falls back to the overview", func(t *testing.T) {
+		var b strings.Builder
+		printHelp(&b, "bogus")
+		out := b.String()
+		if !strings.Contains(out, "no extra detail") || !strings.Contains(out, "QUICK START") {
+			t.Error("unknown topic should note it and show the overview")
+		}
+	})
+}
+
+// Every detailed-help key must be a command the overview actually lists —
+// catches help text drifting away from a renamed/removed command.
+func TestCommandHelpKeysAreReal(t *testing.T) {
+	var b strings.Builder
+	printUsage(&b)
+	out := b.String()
+	for cmd := range commandHelp {
+		if !strings.Contains(out, cmd) {
+			t.Errorf("commandHelp has detail for %q, which the overview doesn't list", cmd)
+		}
+	}
+}
+
 // The `acompose init` template must stay loadable by compose-go — this is
 // the first thing a brand-new user runs.
 func TestDemoComposeParses(t *testing.T) {
