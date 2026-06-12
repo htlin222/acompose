@@ -33,7 +33,7 @@
   a:hover { text-decoration: underline; }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
 
-  header { padding: 72px 0 40px; text-align: center; }
+  header { padding: 72px 0 0; text-align: center; }
   h1 { font-family: var(--mono); font-size: 2.6rem; letter-spacing: -1px; }
   h1 .prompt { color: var(--green); }
   .tagline { font-size: 1.25rem; color: var(--dim); margin: 12px auto 0; max-width: 620px; }
@@ -50,7 +50,7 @@
   .term {
     background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px;
     font-family: var(--mono); font-size: .85rem; text-align: left;
-    margin: 40px auto 0; overflow: hidden; max-width: 760px;
+    margin: 48px auto 0; overflow: hidden; max-width: 760px;
   }
   .term-bar {
     display: flex; gap: 6px; padding: 10px 14px;
@@ -64,20 +64,24 @@
   .g { color: var(--green); } .c { color: var(--cyan); } .y { color: var(--yellow); }
   .d { color: var(--dim); } .b { font-weight: 700; }
 
-  section { padding: 48px 0 8px; }
-  h2 { font-size: 1.5rem; margin-bottom: 8px; }
-  .sub { color: var(--dim); margin-bottom: 28px; }
+  section { padding: 72px 0 8px; }
+  h2 { font-size: 1.5rem; margin-bottom: 10px; }
+  .sub { color: var(--dim); margin-bottom: 32px; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
   .card {
     background: var(--bg-soft); border: 1px solid var(--border);
-    border-radius: 12px; padding: 20px;
+    border-radius: 12px; padding: 22px;
+    display: flex; flex-direction: column;
   }
-  .card h3 { font-size: 1rem; margin-bottom: 6px; }
+  .card h3 { font-size: 1rem; margin-bottom: 8px; }
   .card h3 code { font-family: var(--mono); color: var(--cyan); font-size: .92em; }
   .card p { font-size: .9rem; color: var(--dim); }
   .card p code { font-family: var(--mono); color: var(--fg); font-size: .92em; }
-  .card .src { display: block; margin-top: 10px; font-size: .78rem; color: var(--dim); }
+  .card .src {
+    display: block; margin-top: auto; padding-top: 14px;
+    font-size: .78rem; color: var(--dim);
+  }
 
   .limits { border-left: 3px solid var(--yellow); padding-left: 20px; }
   .limits li { margin: 8px 0 8px 18px; color: var(--dim); }
