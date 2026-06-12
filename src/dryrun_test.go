@@ -79,9 +79,11 @@ func TestCmdUpDryRun(t *testing.T) {
 		mustContain(t, stderr, "stderr",
 			"[db] exec-style healthcheck ignored",
 			"[db] restart: 'always' not enforced",
-			"[db] deploy: ignored",
 			"[app] entrypoint: ignored",
 			"[app] user: ignored")
+		// deploy with only replicas: 1 matches what actually happens (one
+		// container) — it must no longer warn
+		mustNotContain(t, stderr, "stderr", "deploy:")
 	})
 
 	t.Run("summary", func(t *testing.T) {

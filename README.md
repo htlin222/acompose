@@ -33,6 +33,16 @@ fills that gap, and leans into the IP-first model instead of fighting it.
 - Publishes `ports:` to the host so `localhost:8080` keeps working.
 - Supports **named volumes** natively (`container volume create`/`delete`,
   removed on `down -v`, kept otherwise — same contract as docker-compose).
+- Applies **`deploy.resources.limits`** (cpus, memory) as real **VM-level
+  allocation** — not a cgroups share; whole CPUs, rounded up loudly.
+- **`acompose dev`** — compose-spec `develop.watch` hot reload: `sync` copies
+  changed files into the container, `rebuild` rebuilds and recreates,
+  `restart` bounces — with debounce, ignore rules, and a poll watcher with
+  zero extra dependencies.
+- **`acompose dns`** — host-side DNS names via the runtime's native
+  `container system dns` (the `*.orb.local` idea): one-time setup, then
+  `<container>.<project>` resolves from your browser to the container's
+  real IP.
 - **`acompose watch`** — a built-in supervisor that honours `restart:`
   policies the runtime itself doesn't enforce: polls the stack, restarts
   exited services, and re-wires /etc/hosts when IPs change (the
@@ -71,11 +81,14 @@ In a real project:
 
 ```sh
 cd your-project
+acompose check           # compatibility report — how well does this file translate?
 acompose up --dry-run    # see the exact `container` commands first
 acompose up
 acompose ui              # live dashboard on http://127.0.0.1:4242
+acompose dev             # develop.watch hot reload: sync / rebuild / restart
 acompose watch           # supervise restart: policies (poll, restart, re-wire DNS)
 acompose update          # pull newer images, recreate only what changed
+acompose dns setup       # host DNS names via container system dns (one-time sudo)
 acompose ps
 acompose stats
 acompose logs api -f
@@ -83,6 +96,22 @@ acompose exec api -- sh
 acompose refresh         # after sleep/wake or restarts: re-grab IPs, rewrite hosts
 acompose down            # add -v to also remove named volumes
 ```
+
+## Switching from Docker Desktop or OrbStack?
+
+The evaluation funnel, in order — the first two don't touch anything:
+
+```sh
+acompose doctor          # is this machine ready? (arch, macOS, CLI version, service)
+acompose check           # point it at your compose file: what translates, what won't
+acompose import-volumes  # copy your named-volume DATA across (postgres comes with you)
+acompose up
+```
+
+`import-volumes` streams each volume `docker run … tar -cf - | container run …
+tar -xf -`, so Docker/OrbStack must still be installed when you run it — it
+refuses to overwrite non-empty target volumes and warns if a docker container
+is still using the source.
 
 `--file F` (repeatable) and `-p NAME` work like you'd expect;
 `docker-compose.override.yml` is auto-merged.
@@ -111,6 +140,14 @@ if a newer CLI broke something, [open an issue](https://github.com/htlin222/acom
 with your `container --version`.
 
 ## FAQ
+
+**vs OrbStack?** Different layer and a different bet. OrbStack is a complete
+Docker environment (one shared Linux VM, full Docker API) — if it works for
+you today, keep it. acompose is the Compose layer for Apple's OS-native
+runtime: VM-per-container kernel isolation, a real IP per container, zero
+third-party runtime dependency, all MIT/free. Same compose file either way —
+`acompose check` tells you how yours translates, `acompose import-volumes`
+brings your data across.
 
 **Why not Podman?** There's no gap to fill: Podman has
 [podman-compose](https://github.com/containers/podman-compose), and its

@@ -138,6 +138,40 @@ func TestVolName(t *testing.T) {
 	}
 }
 
+// parseIntervalArg guards the --interval flag: Sscanf-style leniency used to
+// accept garbage and 0/negative seconds, turning watch/dev into busy loops.
+func TestParseIntervalArg(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    int
+		wantErr bool
+	}{
+		{"1", 1, false},
+		{"10", 10, false},
+		{"3600", 3600, false},
+		{"0", 0, true},   // a zero interval is a busy loop
+		{"-5", 0, true},  // so is a negative one
+		{"abc", 0, true}, // not a number at all
+		{"", 0, true},    //
+		{"5x", 0, true},  // Sscanf would have happily parsed the 5
+		{"2.5", 0, true}, // whole seconds only
+	}
+	for _, tc := range cases {
+		t.Run("in="+tc.in, func(t *testing.T) {
+			got, err := parseIntervalArg(tc.in)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseIntervalArg(%q) err = %v, wantErr %v", tc.in, err, tc.wantErr)
+			}
+			if err == nil && got != tc.want {
+				t.Errorf("parseIntervalArg(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+			if err != nil && !strings.Contains(err.Error(), "--interval") {
+				t.Errorf("error %q must name the flag", err)
+			}
+		})
+	}
+}
+
 // The `acompose init` template must stay loadable by compose-go — this is
 // the first thing a brand-new user runs.
 func TestDemoComposeParses(t *testing.T) {

@@ -37,6 +37,13 @@ Beyond up/down:
 - `cmdWatch` — supervisor loop honouring `restart:` policies (the runtime has none): polls, `container start`s exited services, and calls `rewireAll` (shared with `cmdRefresh`) to clean stale /etc/hosts entries and re-inject fresh IPs. Refuses `--dry-run`.
 - `cmdUpdate` — pulls images and recreates only services whose manifest digest moved (`imageDigests` extracts only `"digest":` keys — matching every sha256 would catch layer blobs and false-positive after `run`'s shallower implicit pull); `build:` services are rebuilt. Ends with `rewireAll` when anything changed.
 - `acompose refresh` re-reads IPs and rewrites hosts entries after sleep/wake. `cmdDown` tears down in reverse topological order. `stats` is a passthrough to `container stats` with project cnames.
+- src/check.go — `acompose check`: no-runtime compatibility report. `analyzeService` is the single source of truth for platform-gap findings; `warnUnsupported` (main.go) is a thin renderer over it — change classifications there, never in two places. Exit 1 on blockers.
+- src/doctor.go — `acompose doctor`: environment readiness; pure verdict functions + injectable `doctorEnv` for hermetic tests; dispatched before loadProject (works with no compose file). `testedContainerVersion` const is the compat-matrix anchor.
+- src/dns.go — `acompose dns setup|status|teardown` wraps `container system dns` (needs sudo once; on permission failure prints the exact sudo command). cmdUp prints a dim `host DNS:` line when the project domain exists (probe skipped in dry-run). What resolves is `<container-name>.<project>`.
+- src/importvol.go — `acompose import-volumes`: streams docker→container volume data (`runPipeline` uses an os.Pipe for dst stdin to avoid Wait-deadlocks); refuses non-empty targets; docker-side calls are the one justified exec.Command bypass of runner.
+- src/dev.go — `acompose dev`: compose `develop.watch` (sync/rebuild/restart/sync+restart) with a polling scanner (no fsnotify dep). Built-in ignores (.git etc.) match by exact path segment; user ignore patterns are substring/glob. Pure core (scanTree/diffScans/planActions) + thin loop.
+- `deploy.resources.limits` → `--cpus`/`--memory` in runCmd. CPUs are WHOLE only (verified live: the runtime rejects fractions) — `formatCPUs` rounds up, never down; memory rounds up to MiB.
+- Exit-code convention across all subcommands: 0 ok, 1 problems, 2 usage/refusal (incl. all dry-run refusals: watch/dev/dns).
 
 **Dry-run is a first-class mode**: `runner{dry: true}` prints each command instead of executing, and `getIP` returns `<name-ip>` placeholders. Any new execution path must go through `runner.run` so dry-run and the CI assertions keep working.
 

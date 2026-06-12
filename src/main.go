@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,27 +178,25 @@ func toposort(p *types.Project) []string {
 
 // ---------- platform-gap warnings -------------------------------------------------
 
+// warnUnsupported renders analyzeService's findings (check.go — the single
+// source of truth for the per-service platform-gap analysis) as `up`-time
+// warnings. The deploy.* findings collapse into today's single aggregated
+// line; findings with no warnText are warned/enforced elsewhere in the up
+// path (runCmd warns per anonymous mount, cmdUp fails on a missing image).
 func warnUnsupported(name string, s types.ServiceConfig) {
-	if s.HealthCheck != nil && !s.HealthCheck.Disable {
-		warn("[%s] exec-style healthcheck ignored — service_healthy is approximated by TCP polling", name)
+	var deployParts []string
+	for _, f := range analyzeService(name, s) {
+		if strings.HasPrefix(f.feature, "deploy.") {
+			deployParts = append(deployParts, strings.TrimPrefix(f.feature, "deploy."))
+			continue
+		}
+		if f.warnText == "" {
+			continue
+		}
+		warn("[%s] %s", name, f.warnText)
 	}
-	if s.Restart != "" {
-		warn("[%s] restart: '%s' not enforced by the runtime — run 'acompose watch' to supervise", name, s.Restart)
-	}
-	if s.Deploy != nil {
-		warn("[%s] deploy: ignored — resource limits/replicas not applied", name)
-	}
-	if len(s.Secrets) > 0 || len(s.Configs) > 0 {
-		warn("[%s] secrets/configs ignored — not mounted", name)
-	}
-	if len(s.Entrypoint) > 0 {
-		warn("[%s] entrypoint: ignored — override via command: instead", name)
-	}
-	if s.User != "" {
-		warn("[%s] user: ignored — runs as the image's default user", name)
-	}
-	if p := s.Platform; strings.Contains(p, "amd64") || strings.Contains(p, "x86") {
-		warn("[%s] platform '%s': x86 images are NOT seamless on Apple container — may fail to run", name, p)
+	if len(deployParts) > 0 {
+		warn("[%s] deploy: %s ignored — only resources.limits (cpus, memory) are applied", name, strings.Join(deployParts, "/"))
 	}
 }
 
@@ -307,8 +306,59 @@ func runCmd(p *types.Project, cname, network, image string, s types.ServiceConfi
 	if s.WorkingDir != "" {
 		cmd = append(cmd, "--workdir", s.WorkingDir)
 	}
+	// deploy.resources.limits → real VM-level flags (`container run -c/-m`)
+	if s.Deploy != nil && s.Deploy.Resources.Limits != nil {
+		l := s.Deploy.Resources.Limits
+		if l.NanoCPUs > 0 {
+			cpus := formatCPUs(l.NanoCPUs)
+			if frac := float64(l.NanoCPUs.Value()); frac != float64(int(frac)) {
+				warn("cpus %s rounded up to %s — VM allocation is whole CPUs (verified: the runtime rejects fractions)", strconv.FormatFloat(frac, 'f', -1, 32), cpus)
+			}
+			cmd = append(cmd, "--cpus", cpus)
+		}
+		if l.MemoryBytes > 0 {
+			mem := formatMemory(int64(l.MemoryBytes))
+			if int64(l.MemoryBytes)%mib != 0 {
+				warn("memory limit %d bytes rounded up to %s — the platform's granularity is 1MiB", int64(l.MemoryBytes), mem)
+			}
+			cmd = append(cmd, "--memory", mem)
+		}
+	}
 	cmd = append(cmd, image)
 	return append(cmd, s.Command...)
+}
+
+// formatCPUs renders a compose cpus limit as a WHOLE cpu count, rounding up —
+// verified live: `container run --cpus 1.5` is rejected ("Number of CPUs"),
+// because the limit is VM allocation, not a cgroups share. Never round down:
+// the service must not get less than it asked for.
+func formatCPUs(n types.NanoCPUs) string {
+	v := float64(n.Value())
+	whole := int(v)
+	if v != float64(whole) {
+		whole++
+	}
+	if whole < 1 {
+		whole = 1
+	}
+	return strconv.Itoa(whole)
+}
+
+const mib = 1024 * 1024
+
+// formatMemory converts a byte count to the M-suffixed form `container run
+// --memory` documents as its granularity (1MiByte): 536870912 → "512M",
+// 1073741824 → "1024M". Non-whole-MiB values round UP so the service never
+// gets less than the compose file asked for.
+func formatMemory(b int64) string {
+	m := b / mib
+	if b%mib != 0 {
+		m++
+	}
+	if m < 1 {
+		m = 1
+	}
+	return fmt.Sprintf("%dM", m)
 }
 
 func hostsInjectCmd(cname string, pairs [][2]string) []string {
@@ -621,6 +671,16 @@ func cmdUp(p *types.Project, r runner, publish bool, waitTimeout time.Duration) 
 		}
 		fmt.Printf("  %-*s  %s%s%s%s%s\n", width, name, state, green, ip, reset, tail)
 	}
+	// discoverability: when the project's local DNS domain exists, every
+	// service is reachable from the HOST as <cname>.<domain> — say so. One
+	// probe total (dnsDomainListed caches nothing per service), and never in
+	// dry-run: dry prints each runner call, and the probe would pollute the
+	// asserted command transcript. No domain → no line (no nagging).
+	if !r.dry {
+		if listed, ok := dnsDomainListed(r, dnsDomain(p)); ok && listed {
+			fmt.Printf("  %shost DNS: %s%s\n", dim, strings.Join(dnsHostNames(p, dnsDomain(p)), ", "), reset)
+		}
+	}
 	fmt.Printf("\n%scontainers reach each other by service name via /etc/hosts; <SERVICE>_HOST env vars are the fallback for shell-less images%s\n", dim, reset)
 	fmt.Printf("%safter sleep/wake or restarts, run: acompose refresh%s\n", dim, reset)
 }
@@ -691,26 +751,15 @@ func cmdDown(p *types.Project, r runner, removeVolumes bool) {
 	okay("down")
 }
 
-// ensureServiceRunning makes a single service run regardless of its current
-// state: a stopped container is started; a missing one (deleted, or never
-// created) is recreated through the same runCmd path `up` uses — network and
-// named volumes ensured, <DEP>_HOST env injected. On success the project's
-// /etc/hosts wiring is refreshed so peers see the (possibly new) IP.
-func ensureServiceRunning(p *types.Project, r runner, name string, publish bool) (bool, string) {
+// recreateService creates a service's container from scratch the way `up`
+// would: network and named volumes ensured, <DEP>_HOST env injected, then the
+// same runCmd path. It does NOT touch /etc/hosts wiring — callers rewire
+// afterwards (shared by ensureServiceRunning and `dev`'s rebuild action).
+func recreateService(p *types.Project, r runner, name string, publish bool) (bool, string) {
 	svc, exists := p.Services[name]
 	if !exists {
 		return false, "unknown service " + name
 	}
-	cname := cnameOf(p, name)
-
-	if ok, _ := r.run(ctr("start", cname), "not found", "no such", "already running", "exist"); ok {
-		if len(p.Services) > 1 {
-			rewireAll(p, r)
-		}
-		return true, "started"
-	}
-
-	// nothing to start — recreate it the way `up` would
 	image := svc.Image
 	if image == "" {
 		if svc.Build == nil {
@@ -732,13 +781,35 @@ func ensureServiceRunning(p *types.Project, r runner, name string, publish bool)
 			extra[envKey(dep)] = ip
 		}
 	}
-	if ok, msg := r.run(runCmd(p, cname, p.Name+"-net", image, svc, extra, publish)); !ok {
+	if ok, msg := r.run(runCmd(p, cnameOf(p, name), p.Name+"-net", image, svc, extra, publish)); !ok {
 		return false, msg
 	}
-	if len(p.Services) > 1 {
+	return true, "recreated"
+}
+
+// ensureServiceRunning makes a single service run regardless of its current
+// state: a stopped container is started; a missing one (deleted, or never
+// created) is recreated through recreateService. On success the project's
+// /etc/hosts wiring is refreshed so peers see the (possibly new) IP.
+func ensureServiceRunning(p *types.Project, r runner, name string, publish bool) (bool, string) {
+	if _, exists := p.Services[name]; !exists {
+		return false, "unknown service " + name
+	}
+	cname := cnameOf(p, name)
+
+	if ok, _ := r.run(ctr("start", cname), "not found", "no such", "already running", "exist"); ok {
+		if len(p.Services) > 1 {
+			rewireAll(p, r)
+		}
+		return true, "started"
+	}
+
+	// nothing to start — recreate it the way `up` would
+	ok, msg := recreateService(p, r, name, publish)
+	if ok && len(p.Services) > 1 {
 		rewireAll(p, r)
 	}
-	return true, "recreated"
+	return ok, msg
 }
 
 // cmdWatch supervises restart: policies the runtime itself does not enforce
@@ -989,6 +1060,20 @@ func cmdInit() {
 	fmt.Printf("  %sacompose down%s      tear it down\n", bold, reset)
 }
 
+// parseIntervalArg validates a --interval value: a whole number of seconds,
+// at least 1 — fmt.Sscanf-style leniency silently accepted garbage and
+// 0/negative values, turning the watch/dev poll loops into busy loops.
+func parseIntervalArg(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("--interval needs a whole number of seconds, got %q", s)
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("--interval must be at least 1 second, got %d", n)
+	}
+	return n, nil
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -1003,6 +1088,10 @@ func main() {
 		cmdInit()
 		return
 	}
+	if sub == "doctor" { // environment check — must work without a compose file
+		cmdDoctor()
+		return
+	}
 	rest := args[1:]
 
 	var files []string
@@ -1010,7 +1099,7 @@ func main() {
 	dry, noPublish, follow := false, false, false
 	removeVolumes := false
 	waitTimeout := 30 * time.Second
-	intervalSec := 10
+	intervalSec, intervalSet := 10, false
 	var positional []string
 
 	for i := 0; i < len(rest); i++ {
@@ -1036,7 +1125,12 @@ func main() {
 			waitTimeout *= time.Second / time.Duration(1)
 		case "--interval":
 			i++
-			fmt.Sscanf(rest[i], "%d", &intervalSec)
+			n, err := parseIntervalArg(rest[i])
+			if err != nil {
+				fail("%v", err)
+				os.Exit(2)
+			}
+			intervalSec, intervalSet = n, true
 		case "--":
 			positional = append(positional, rest[i+1:]...)
 			i = len(rest)
@@ -1051,12 +1145,22 @@ func main() {
 	switch sub {
 	case "up":
 		cmdUp(p, r, !noPublish, waitTimeout)
+	case "check": // exit 0 = no blockers, 1 = at least one blocker
+		cmdCheck(p)
 	case "down":
 		cmdDown(p, r, removeVolumes)
 	case "refresh":
 		cmdRefresh(p, r)
 	case "watch":
 		cmdWatch(p, r, time.Duration(intervalSec)*time.Second)
+	case "dev":
+		// dev polls fast by default (1s — it's an inner-loop tool); an
+		// explicit --interval overrides, sharing watch's flag.
+		devInterval := time.Second
+		if intervalSet {
+			devInterval = time.Duration(intervalSec) * time.Second
+		}
+		cmdDev(p, r, positional, devInterval, !noPublish)
 	case "update":
 		cmdUpdate(p, r, !noPublish)
 	case "stats":
@@ -1067,6 +1171,14 @@ func main() {
 		passthrough(append(ctr("stats"), cnames...))
 	case "ps":
 		cmdPs(p, r)
+	case "import-volumes":
+		cmdImportVolumes(p, r, positional)
+	case "dns":
+		dnsSub := ""
+		if len(positional) > 0 {
+			dnsSub = positional[0]
+		}
+		cmdDNS(p, r, dnsSub)
 	case "ui":
 		addr := "127.0.0.1:4242"
 		explicit := len(positional) > 0
@@ -1113,12 +1225,17 @@ usage:
   acompose down  [--file F]... [-p NAME] [--dry-run] [-v]   (-v also removes named volumes)
   acompose refresh | ps | build
   acompose watch  [--interval S]   supervise restart: policies (autoheal)
+  acompose dev   [SERVICE...]        watch develop.watch triggers: sync/rebuild/restart
   acompose update [--dry-run]      pull newer images and recreate (dockcheck)
   acompose stats                   live resource usage
   acompose ui    [ADDR]            live dashboard (default 127.0.0.1:4242)
   acompose logs  SERVICE [-f]
   acompose exec  SERVICE -- CMD...
+  acompose check                   compatibility report for your compose file (no changes made)
+  acompose dns   [setup|status|teardown]   host DNS names via container system dns
+  acompose import-volumes [VOL...]  copy named-volume data from Docker/OrbStack
   acompose init                    scaffold a minimal demo docker-compose.yml
+  acompose doctor                  check this machine is ready to run acompose
   acompose version`)
 	os.Exit(2)
 }
