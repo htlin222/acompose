@@ -47,3 +47,4 @@ Beyond up/down:
 - User-facing output goes through `info`/`okay`/`warn`/`fail` (colors auto-disable when not a TTY). `warn`/`fail` write to stderr — CI asserts warnings on stderr separately from stdout.
 - Map iteration is always sorted before generating commands so output is deterministic (CI greps depend on it).
 - Releases: push a `v*` tag → goreleaser workflow builds multi-platform binaries (`main: ./src` in .goreleaser.yaml).
+- Landing site: `site/index.html` (single static file, no build step) auto-deploys to https://acompose.pages.dev via `.github/workflows/pages.yml` on pushes touching `site/**` (Cloudflare Pages project `acompose`; secrets `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`). Note: the user's global gitignore excludes `*.html` — the repo `.gitignore` negates it for `site/`.
