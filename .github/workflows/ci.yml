@@ -41,6 +41,11 @@ jobs:
         run: go vet ./...
 
       - name: govulncheck
+        # force our pinned toolchain: `go run ...@latest` otherwise picks the
+        # minimum toolchain that satisfies x/vuln's own go directive (1.25.x),
+        # which then can't analyze code built against the go1.26 stdlib
+        env:
+          GOTOOLCHAIN: go1.26.4
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - name: go test (race detector)
