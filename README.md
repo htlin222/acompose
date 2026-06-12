@@ -53,6 +53,11 @@ fills that gap, and leans into the IP-first model instead of fighting it.
 - **`acompose ui`** — a live dashboard in the same binary: every service as
   a card with its real IP front and center, status lamp, published ports,
   logs panel, stop/start. `acompose stats` for live resource usage.
+- **Menu bar presence** — `acompose menubar` emits
+  [SwiftBar](https://github.com/swiftbar/SwiftBar)/xbar plugin output
+  (status dots, IPs, start/stop actions, port links); drop
+  `contrib/swiftbar/acompose.5s.sh` into your plugin folder and your stack
+  lives in the macOS menu bar.
 - Is **loud about everything the platform can't honour** (deploy limits,
   exec healthchecks, x86 images). No silent surprises.
 
